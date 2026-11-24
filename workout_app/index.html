@@ -29,13 +29,13 @@
   <main id="app" class="wrap">
     <section class="session">
       <textarea id="workout-name" class="title-input" data-field="workout-name" rows="1" placeholder="Name this workout" aria-label="Workout name" autocomplete="off" enterkeyhint="done"></textarea>
-      <div class="title-picker" aria-label="Pick a workout title">
+      <div class="title-picker" aria-label="My workouts">
         <div class="picker-head">
-          <span>Pick a workout</span>
+          <span>My workouts</span>
           <button type="button" class="link-btn" data-action="manage-titles" aria-pressed="false">Edit list</button>
         </div>
         <div id="title-chips" class="chips"></div>
-        <div id="repeat-slot"></div>
+        <div id="new-form-slot"></div>
       </div>
       <div class="session-meta">
         <input id="workout-date" type="date" data-field="workout-date" aria-label="Workout date">
@@ -54,6 +54,8 @@
       </div>
       <p id="add-error" class="field-error" role="alert"></p>
     </section>
+
+    <div id="save-slot"></div>
 
     <button type="button" class="btn btn-finish" data-action="finish">Finish workout &amp; start new</button>
 

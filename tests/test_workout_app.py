@@ -26,6 +26,11 @@ def saved(page: Page):
     return json.loads(page.evaluate(f"localStorage.getItem('{STORAGE_KEY}')"))
 
 
+def values(locator):
+    """Current values of every matching input, in order."""
+    return [el.input_value() for el in locator.all()]
+
+
 def add_single(page: Page, name: str):
     page.fill("#new-exercise", name)
     page.click("[data-action='add-single']")
@@ -55,17 +60,18 @@ def test_empty_name_shows_error(app: Page):
 
 def test_sets_weight_reps_done_and_persistence(app: Page):
     add_single(app, "Back squat")
+    expect(app.locator(".set-row")).to_have_count(3)  # new exercises start with 3 sets
     row = app.locator(".set-row").first
     row.locator("[data-field='weight']").fill("135")
     row.locator("[data-field='reps']").fill("8")
     app.click("[data-action='add-set']")
-    expect(app.locator(".set-row")).to_have_count(2)
+    expect(app.locator(".set-row")).to_have_count(4)
     # New set copies the previous weight and reps.
-    expect(app.locator(".set-row").nth(1).locator("[data-field='weight']")).to_have_value("135")
+    expect(app.locator(".set-row").nth(3).locator("[data-field='weight']")).to_have_value("135")
     app.locator(".set-row").nth(0).locator("[data-action='toggle-done']").click()
-    expect(app.locator("#progress")).to_have_text("1/2 sets done")
+    expect(app.locator("#progress")).to_have_text("1/4 sets done")
     app.locator(".set-row").nth(1).locator("[data-action='remove-set']").click()
-    expect(app.locator(".set-row")).to_have_count(1)
+    expect(app.locator(".set-row")).to_have_count(3)
 
     app.locator("textarea[data-field='ex-notes']").fill("Brace hard")
     app.fill("#workout-notes", "Good energy")
@@ -109,14 +115,14 @@ def test_superset_rounds_and_numbering(app: Page):
 
 def test_unit_toggle_converts_and_default_unit(app: Page):
     add_single(app, "Deadlift")
-    app.locator("[data-field='weight']").fill("100")
-    app.click("[data-action='toggle-unit']")
-    expect(app.locator(".unit-btn")).to_have_text("kg")
-    expect(app.locator("[data-field='weight']")).to_have_value("45.5")
+    app.locator("[data-field='weight']").first.fill("100")
+    app.locator("[data-action='toggle-unit']").first.click()
+    expect(app.locator(".unit-btn")).to_have_text(["kg", "kg", "kg"])
+    expect(app.locator("[data-field='weight']").first).to_have_value("45.5")
 
     app.click("[data-action='default-unit'][data-unit='kg']")
     add_single(app, "Overhead press")
-    expect(app.locator(".exercise").nth(1).locator(".unit-btn")).to_have_text("kg")
+    expect(app.locator(".exercise").nth(1).locator(".unit-btn").first).to_have_text("kg")
     assert saved(app)["settings"]["defaultUnit"] == "kg"
 
 
@@ -139,11 +145,15 @@ def test_finish_workout_moves_to_history(app: Page):
     expect(app.locator(".exercise h3")).to_have_text("Bench press")
 
     data = saved(app)
-    assert data["schemaVersion"] == 1
+    assert data["schemaVersion"] == 2
     assert len(data["workouts"]) == 2
 
 
-# ---------- workout title pick list (v1.1) ----------
+# ---------- titles, My workouts buttons, auto-fill (v1.2) ----------
+
+def tpl_button(page: Page, name: str):
+    return page.locator(".chip-btn[data-action='pick-template']", has_text=name)
+
 
 def test_long_title_wraps_instead_of_cutting_off(app: Page):
     app.set_viewport_size({"width": 375, "height": 800})
@@ -154,75 +164,115 @@ def test_long_title_wraps_instead_of_cutting_off(app: Page):
         " return {sw: e.scrollWidth, cw: e.clientWidth, sh: e.scrollHeight, h: e.clientHeight}; })()")
     assert box["sw"] <= box["cw"], "title scrolls sideways (gets cut off)"
     assert box["h"] >= box["sh"] - 1, "title box did not grow to show every line"
-    expect(app.locator("#workout-name")).to_have_value(title)
 
 
-def test_pick_title_from_presets(app: Page):
-    for preset in ["Push day", "Pull day", "Leg day", "Upper body"]:
-        expect(app.locator(f".chip-btn[data-title='{preset}']")).to_have_count(1)
-    app.click(".chip-btn[data-title='Leg day']")
-    expect(app.locator("#workout-name")).to_have_value("Leg day")
-    expect(app.locator(".chip-btn[data-title='Leg day']")).to_have_attribute("aria-pressed", "true")
-
-
-def test_typed_and_finished_titles_join_pick_list(app: Page):
-    app.fill("#workout-name", "Workout A")
-    app.locator("#workout-name").blur()
-    expect(app.locator(".chip-btn").first).to_have_text("Workout A")
-    app.click("[data-action='finish']")
-    app.fill("#workout-name", "Workout B")
-    app.click("[data-action='finish']")
-    chips = app.locator(".chip-btn")
-    expect(chips.nth(0)).to_have_text("Workout B")
-    expect(chips.nth(1)).to_have_text("Workout A")
+def test_first_row_auto_fills_rows_below(app: Page):
+    add_single(app, "Bench press")
+    rows = app.locator(".set-row")
+    rows.nth(0).locator("[data-field='weight']").fill("135")
+    rows.nth(0).locator("[data-field='reps']").fill("10")
+    assert values(app.locator("[data-field='weight']")) == ["135", "135", "135"]
+    assert values(app.locator("[data-field='reps']")) == ["10", "10", "10"]
+    # A row you changed yourself is left alone; a checked-off row too.
+    rows.nth(1).locator("[data-field='reps']").fill("8")
+    rows.nth(2).locator("[data-action='toggle-done']").click()
+    rows.nth(0).locator("[data-field='reps']").fill("12")
+    assert values(app.locator("[data-field='reps']")) == ["12", "8", "10"]
     app.reload()
-    expect(app.locator(".chip-btn").nth(0)).to_have_text("Workout B")
+    assert values(app.locator("[data-field='reps']")) == ["12", "8", "10"]
 
 
-def test_existing_saves_seed_the_pick_list(page: Page, base_url):
+def test_superset_first_row_auto_fills(app: Page):
+    app.fill("#new-exercise", "Bulgarian split squat")
+    app.click("[data-action='add-superset']")
+    first = app.locator(".superset .exercise").first
+    first.locator("[data-field='weight']").first.fill("25")
+    assert values(first.locator("[data-field='weight']")) == ["25", "25", "25"]
+
+
+def test_presets_are_buttons_and_load_name(app: Page):
+    for name in ["Push day", "Pull day", "Leg day", "Upper body", "Lower body", "Full body"]:
+        expect(tpl_button(app, name)).to_have_count(1)
+    tpl_button(app, "Leg day").click()
+    expect(app.locator("#workout-name")).to_have_value("Leg day")
+    expect(tpl_button(app, "Leg day")).to_have_attribute("aria-pressed", "true")
+
+
+def test_create_build_save_and_reuse_workout_button(app: Page):
+    app.click("[data-action='open-new-form']")
+    app.fill("#new-template-name", "Push day A")
+    app.click("[data-action='create-template']")
+    expect(app.locator("#workout-name")).to_have_value("Push day A")
+    expect(app.locator("[data-action='save-template']")).to_have_count(0)  # nothing to save yet
+
+    add_single(app, "Bench press")
+    app.locator("[data-field='weight']").first.fill("135")
+    app.locator("[data-field='reps']").first.fill("8")
+    save_btn = app.locator("[data-action='save-template']")
+    expect(save_btn).to_contain_text("Save “Push day A” to My workouts")
+    save_btn.click()
+    expect(save_btn).to_have_count(0)
+    expect(tpl_button(app, "Push day A")).to_have_count(1)
+    expect(tpl_button(app, "Push day A")).to_have_attribute("aria-pressed", "true")
+
+    # Change it, then save the changes back to the same button.
+    add_single(app, "Overhead press")
+    expect(app.locator("[data-action='save-template']")).to_contain_text("Save changes to “Push day A”")
+    app.click("[data-action='save-template']")
+
+    # Next session: tap the button and the whole workout comes back, nothing checked.
+    app.locator("[data-action='toggle-done']").first.click()
+    app.click("[data-action='finish']")
+    expect(app.locator(".exercise")).to_have_count(0)
+    tpl_button(app, "Push day A").click()
+    expect(app.locator(".exercise h3")).to_have_text(["Bench press", "Overhead press"])
+    expect(app.locator("[data-field='weight']").first).to_have_value("135")
+    expect(app.locator("[data-action='toggle-done'][aria-pressed='true']")).to_have_count(0)
+
+    app.reload()
+    expect(tpl_button(app, "Push day A")).to_have_count(1)
+    assert saved(app)["templates"][0]["name"] == "Push day A"
+
+
+def test_edit_list_rename_and_delete(app: Page):
+    tpl_button(app, "Push day").click()
+    app.click("[data-action='manage-titles']")
+    row = app.locator(".tpl-edit").first
+    row.locator("input").fill("Push day (heavy)")
+    row.locator("input").press("Enter")
+    expect(app.locator("#workout-name")).to_have_value("Push day (heavy)")
+    app.locator(".tpl-edit", has=app.locator("input[value='Pull day']")).locator("[data-action='delete-template']").click()
+    app.click("[data-action='manage-titles']")
+    expect(tpl_button(app, "Push day (heavy)")).to_have_count(1)
+    expect(tpl_button(app, "Pull day")).to_have_count(0)
+    app.reload()
+    expect(tpl_button(app, "Push day (heavy)")).to_have_count(1)
+    expect(tpl_button(app, "Pull day")).to_have_count(0)
+
+
+def test_v1_1_saves_migrate_to_buttons(page: Page, base_url):
+    bench = {"id": "e_1", "name": "Bench press", "unit": "lbs", "notes": "",
+             "sets": [{"id": "s_1", "weight": 135, "reps": 8, "done": True}]}
     old = {
         "schemaVersion": 1, "settings": {"defaultUnit": "lbs"}, "customExercises": [],
-        "activeWorkoutId": "w_2",
+        "workoutTitles": ["Workout B", "Workout A"],
+        "activeWorkoutId": "w_3",
         "workouts": [
             {"id": "w_1", "name": "Workout A", "date": "2026-11-20", "startedAt": "2026-11-20T10:00:00Z",
-             "finishedAt": "2026-11-20T11:00:00Z", "updatedAt": "x", "notes": "", "blocks": []},
-            {"id": "w_2", "name": "", "date": "2026-11-23", "startedAt": "2026-11-23T10:00:00Z",
+             "finishedAt": "x", "updatedAt": "x", "notes": "",
+             "blocks": [{"id": "b_1", "type": "single", "rounds": None, "exercises": [bench]}]},
+            {"id": "w_2", "name": "Workout B", "date": "2026-11-21", "startedAt": "2026-11-21T10:00:00Z",
+             "finishedAt": "x", "updatedAt": "x", "notes": "", "blocks": []},
+            {"id": "w_3", "name": "", "date": "2026-11-23", "startedAt": "2026-11-23T10:00:00Z",
              "finishedAt": None, "updatedAt": "x", "notes": "", "blocks": []},
         ],
     }
-    # Put the old-format save in place before the app's first load.
     page.add_init_script(f"localStorage.setItem('workoutApp.v1', JSON.stringify({json.dumps(old)}))")
     page.goto(f"{base_url}/workout_app/")
-    expect(page.locator(".chip-btn").first).to_have_text("Workout A")
-
-
-def test_repeat_last_workout_with_same_title(app: Page):
-    app.click(".chip-btn[data-title='Push day']")
-    add_single(app, "Bench press")
-    row = app.locator(".set-row").first
-    row.locator("[data-field='weight']").fill("135")
-    row.locator("[data-field='reps']").fill("8")
-    row.locator("[data-action='toggle-done']").click()
-    app.click("[data-action='finish']")
-
-    expect(app.locator("[data-action='repeat-workout']")).to_have_count(0)
-    app.click(".chip-btn[data-title='Push day']")
-    repeat = app.locator("[data-action='repeat-workout']")
-    expect(repeat).to_contain_text("Repeat last Push day")
-    repeat.click()
-    expect(app.locator(".exercise h3")).to_have_text("Bench press")
-    row = app.locator(".set-row").first
-    expect(row.locator("[data-field='weight']")).to_have_value("135")
-    expect(row.locator("[data-field='reps']")).to_have_value("8")
-    expect(row.locator("[data-action='toggle-done']")).to_have_attribute("aria-pressed", "false")
-    expect(app.locator("[data-action='repeat-workout']")).to_have_count(0)
-
-
-def test_edit_list_removes_saved_title(app: Page):
-    app.fill("#workout-name", "Workout A")
-    app.click("[data-action='finish']")
-    app.click("[data-action='manage-titles']")
-    app.click(".chip-x[data-title='Workout A']")
-    app.click("[data-action='manage-titles']")
-    expect(app.locator(".chip-btn[data-title='Workout A']")).to_have_count(0)
-    expect(app.locator(".chip-btn[data-title='Push day']")).to_have_count(1)
+    buttons = page.locator(".chip-btn[data-action='pick-template']")
+    expect(buttons.nth(0)).to_contain_text("Workout B")
+    expect(buttons.nth(1)).to_contain_text("Workout A")
+    expect(tpl_button(page, "Push day")).to_have_count(1)
+    tpl_button(page, "Workout A").click()
+    expect(page.locator(".exercise h3")).to_have_text("Bench press")
+    expect(page.locator("[data-field='weight']").first).to_have_value("135")

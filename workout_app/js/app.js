@@ -8,6 +8,7 @@ let undoSnapshot = null;
 let toastTimer = null;
 let saveTimer = null;
 let managingTitles = false;
+let newFormOpen = false;
 
 const $ = (sel) => document.querySelector(sel);
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -29,8 +30,9 @@ function commit(fn, undoLabel) {
   if (undoLabel) showToast(undoLabel);
 }
 
-function showToast(msg) {
+function showToast(msg, canUndo = true) {
   $("#toast-msg").textContent = msg;
+  $("#toast [data-action='undo']").hidden = !canUndo;
   $("#toast").hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { $("#toast").hidden = true; undoSnapshot = null; }, 6000);
@@ -131,6 +133,7 @@ function render() {
   $("#exercise-list").innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
 
   renderTitlePicker();
+  renderSaveBar();
   renderHistory();
   document.querySelectorAll("textarea.notes, #workout-name").forEach(autoGrow);
 }
@@ -147,24 +150,51 @@ function updateProgress() {
 
 function renderTitlePicker() {
   const w = S.activeWorkout(data);
-  const current = (w.name || "").trim().toLowerCase();
-  $("[data-action='manage-titles']").setAttribute("aria-pressed", String(managingTitles));
-  $("[data-action='manage-titles']").textContent = managingTitles ? "Done" : "Edit list";
-  $("#title-chips").innerHTML = S.titleOptions(data).map(({ name, saved }) => {
-    const on = name.trim().toLowerCase() === current;
-    const remove = managingTitles && saved
-      ? `<button type="button" class="chip-x" data-action="forget-title" data-title="${esc(name)}" aria-label="Remove ${esc(name)} from list">&times;</button>`
-      : "";
-    return `<span class="chip ${on ? "is-on" : ""}">
-      <button type="button" class="chip-btn" data-action="pick-title" data-title="${esc(name)}" aria-pressed="${on}">${esc(name)}</button>${remove}
-    </span>`;
-  }).join("");
+  const manage = $("[data-action='manage-titles']");
+  manage.setAttribute("aria-pressed", String(managingTitles));
+  manage.textContent = managingTitles ? "Done" : "Edit list";
 
-  const last = w.blocks.length ? null : S.lastWorkoutWithTitle(data, w.name);
-  $("#repeat-slot").innerHTML = last
-    ? `<button type="button" class="btn btn-repeat" data-action="repeat-workout" data-workout="${last.id}">
-        Repeat last ${esc(last.name)}
-        <small>${esc(last.date)} · ${plural(S.workoutSummary(last).exercises, "exercise")}, same weights &amp; reps</small>
+  if (managingTitles) {
+    // Edit mode: every button becomes a full-width row you can rename or delete.
+    $("#title-chips").innerHTML = data.templates.length
+      ? data.templates.map((t) => `
+        <div class="tpl-edit" data-tpl="${t.id}">
+          <input value="${esc(t.name)}" data-field="tpl-name" aria-label="Rename ${esc(t.name)}" enterkeyhint="done">
+          <button type="button" class="icon-btn small" data-action="delete-template" aria-label="Delete ${esc(t.name)}">&times;</button>
+        </div>`).join("")
+      : `<p class="empty">No saved workouts.</p>`;
+    $("#new-form-slot").innerHTML = "";
+    return;
+  }
+
+  const linked = S.findTemplate(data, w.templateId);
+  $("#title-chips").innerHTML = data.templates.map((t) => {
+    const on = linked ? linked.id === t.id : (w.name || "").trim().toLowerCase() === t.name.toLowerCase();
+    const count = S.workoutSummary(t).exercises;
+    return `<span class="chip ${on ? "is-on" : ""}">
+      <button type="button" class="chip-btn" data-action="pick-template" data-tpl="${t.id}" aria-pressed="${on}">${esc(t.name)}${
+        count ? ` <small>${count}</small>` : ""}</button>
+    </span>`;
+  }).join("") + `<span class="chip chip-new">
+      <button type="button" class="chip-btn" data-action="open-new-form" aria-expanded="${newFormOpen}">+ New workout</button>
+    </span>`;
+
+  $("#new-form-slot").innerHTML = newFormOpen
+    ? `<div class="new-form">
+        <input id="new-template-name" placeholder="Name it, e.g. Push day A" aria-label="New workout name" autocomplete="off" enterkeyhint="done">
+        <button type="button" class="btn btn-primary" data-action="create-template">Create</button>
+        <button type="button" class="btn btn-ghost" data-action="close-new-form">Cancel</button>
+        <p class="hint">Then add exercises below and tap <strong>Save</strong> at the bottom to keep it as a button.</p>
+      </div>`
+    : "";
+}
+
+function renderSaveBar() {
+  const st = S.saveState(data);
+  $("#save-slot").innerHTML = st.show
+    ? `<button type="button" class="btn btn-save" data-action="save-template">
+        ${st.isNew ? `Save “${esc(st.name)}” to My workouts` : `Save changes to “${esc(st.templateName)}”`}
+        <small>Keeps the exercises, sets, weights and reps as a button for next time</small>
       </button>`
     : "";
 }
@@ -246,16 +276,38 @@ document.addEventListener("click", (e) => {
       return commit(() => S.toggleDone(data, exId, row.dataset.set));
     case "toggle-unit":
       return commit(() => S.toggleUnit(data, exId));
-    case "pick-title":
-      if (managingTitles) return;
-      return commit(() => S.updateWorkoutField(data, "name", btn.dataset.title));
+    case "pick-template": {
+      const t = S.findTemplate(data, btn.dataset.tpl);
+      const replacing = t && t.blocks.length && S.activeWorkout(data).blocks.length;
+      return commit(() => S.startFromTemplate(data, btn.dataset.tpl), replacing ? `Loaded ${t.name}` : undefined);
+    }
+    case "open-new-form":
+      newFormOpen = !newFormOpen;
+      renderTitlePicker();
+      if (newFormOpen) $("#new-template-name").focus();
+      return;
+    case "close-new-form":
+      newFormOpen = false;
+      return renderTitlePicker();
+    case "create-template": {
+      const input = $("#new-template-name");
+      const name = input.value.replace(/\s+/g, " ").trim();
+      if (!name) { input.focus(); input.placeholder = "Type a name first"; return; }
+      newFormOpen = false;
+      const hadExercises = S.activeWorkout(data).blocks.length > 0;
+      commit(() => S.startNewTemplate(data, name), hadExercises ? "Started a new workout" : undefined);
+      $("#new-exercise").focus();
+      return;
+    }
+    case "save-template":
+      commit(() => S.saveAsTemplate(data));
+      return showToast("Saved to My workouts", false);
     case "manage-titles":
       managingTitles = !managingTitles;
+      newFormOpen = false;
       return renderTitlePicker();
-    case "forget-title":
-      return commit(() => S.forgetTitle(data, btn.dataset.title));
-    case "repeat-workout":
-      return commit(() => S.repeatWorkout(data, btn.dataset.workout));
+    case "delete-template":
+      return commit(() => S.deleteTemplate(data, btn.closest("[data-tpl]").dataset.tpl), "Workout button deleted");
     case "finish":
       return commit(() => S.finishWorkout(data), "Workout saved to history");
     case "open-workout":
@@ -285,9 +337,15 @@ document.addEventListener("input", (e) => {
   const row = el.closest(".set-row");
 
   if (field === "weight" || field === "reps") {
-    S.updateSet(data, row.dataset.ex, row.dataset.set, field, el.value);
+    const filled = S.updateSet(data, row.dataset.ex, row.dataset.set, field, el.value);
+    for (const id of filled) {
+      const other = document.querySelector(`.set-row[data-set="${id}"] [data-field="${field}"]`);
+      if (other) other.value = el.value;
+    }
   } else if (field === "ex-notes") {
     S.updateExerciseField(data, el.dataset.ex, "notes", el.value);
+  } else if (field === "tpl-name") {
+    return; // renames are saved when you leave the box (see "change" below)
   } else if (field === "workout-name") {
     S.updateWorkoutField(data, "name", el.value);
     renderTitlePicker();
@@ -296,6 +354,7 @@ document.addEventListener("input", (e) => {
   } else if (field === "workout-notes") {
     S.updateWorkoutField(data, "notes", el.value);
   }
+  renderSaveBar();
   saveSoon();
 });
 
@@ -303,6 +362,16 @@ document.addEventListener("input", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   if (e.target.id === "workout-name") {
+    e.preventDefault();
+    e.target.blur();
+    return;
+  }
+  if (e.target.id === "new-template-name") {
+    e.preventDefault();
+    document.querySelector("[data-action='create-template']").click();
+    return;
+  }
+  if (e.target.dataset.field === "tpl-name") {
     e.preventDefault();
     e.target.blur();
     return;
@@ -316,23 +385,18 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// When the title box loses focus, add what was typed to the pick list.
+// Renaming a workout button (Edit list) is saved when the box loses focus.
 document.addEventListener("change", (e) => {
-  if (e.target.id !== "workout-name") return;
-  const clean = e.target.value.replace(/\s+/g, " ").trim();
-  S.updateWorkoutField(data, "name", clean);
-  S.rememberTitle(data, clean);
-  save();
-  // Blur often happens because the user is tapping a chip. Re-drawing right now would swap
-  // that chip out mid-tap, so wait for the click to finish (or 400 ms) before re-drawing.
-  let timer = null;
-  const later = () => {
-    clearTimeout(timer);
-    document.removeEventListener("click", later, true);
-    setTimeout(render, 0);
-  };
-  document.addEventListener("click", later, true);
-  timer = setTimeout(later, 400);
+  if (e.target.dataset.field === "tpl-name") {
+    const id = e.target.closest("[data-tpl]").dataset.tpl;
+    S.renameTemplate(data, id, e.target.value);
+    save();
+    setValue("#workout-name", S.activeWorkout(data).name);
+    autoGrow($("#workout-name"));
+  } else if (e.target.id === "workout-name") {
+    S.updateWorkoutField(data, "name", e.target.value.replace(/\s+/g, " ").trim());
+    save();
+  }
 });
 
 function showFieldError(msg) {

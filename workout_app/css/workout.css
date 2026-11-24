@@ -61,10 +61,34 @@ input, textarea { font: inherit; color: var(--ink); }
   white-space: normal; overflow-wrap: anywhere; line-height: 1.25; font-size: .95rem;
 }
 .chip-x { border: 0; background: transparent; color: var(--danger); font-size: 1.2rem; padding: 0 12px 0 0; min-height: 40px; }
-.btn-repeat {
-  width: 100%; margin-top: 12px; text-align: left; background: var(--surface); border: 1.5px solid var(--mint);
+.chip-btn small { color: var(--ink-faint); font-size: .8rem; margin-left: 4px; }
+.chip.is-on .chip-btn small { color: #0d3b30; }
+.chip-new { border-style: dashed; }
+.chip-new .chip-btn { color: var(--mint-dark); font-weight: 500; }
+.new-form {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; margin-top: 12px;
+  padding: 12px; border-radius: var(--radius); background: var(--surface);
 }
-.btn-repeat small { display: block; font-weight: 400; color: var(--ink-soft); margin-top: 2px; }
+.new-form input {
+  height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); font-size: 1rem; min-width: 0;
+}
+.new-form .hint { grid-column: 1 / -1; margin: 0; color: var(--ink-soft); font-size: .85rem; }
+.tpl-edit { display: flex; align-items: center; gap: 8px; width: 100%; }
+.tpl-edit input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 14px; font-size: 1rem;
+  border: 1.5px solid var(--line); border-radius: 999px; background: var(--bg);
+}
+.tpl-edit input:focus, .new-form input:focus { outline: none; border-color: var(--mint); }
+.btn.btn-save {
+  width: 100%; margin-top: 16px; text-align: left; background: var(--mint); color: #0d3b30;
+}
+.btn-save small { display: block; font-weight: 400; color: #0d3b30; opacity: .8; margin-top: 2px; }
+.toast button[hidden] { display: none; }
+
+@media (max-width: 400px) {
+  .new-form { grid-template-columns: 1fr 1fr; }
+  .new-form input { grid-column: 1 / -1; }
+}
 
 /* ---------- blocks ---------- */
 #blocks { display: flex; flex-direction: column; gap: 20px; margin-top: 20px; }

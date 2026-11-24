@@ -1,7 +1,8 @@
 // Data model and actions. Pure data in, data out — no DOM code here.
 // Shape: data → workouts[] → blocks[] → exercises[] → sets[]
+//        data → templates[] (saved workout buttons) → blocks[] → …
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 const LB_PER_KG = 2.20462;
 
 export const uid = (prefix) =>
@@ -20,7 +21,7 @@ export const newSet = (from) => ({
   done: false,
 });
 
-export const newExercise = (name, unit, setCount = 1) => ({
+export const newExercise = (name, unit, setCount = 3) => ({
   id: uid("e"),
   name: name.trim(),
   unit,
@@ -36,6 +37,7 @@ export const newWorkout = () => ({
   finishedAt: null,
   updatedAt: now(),
   notes: "",
+  templateId: null,
   blocks: [],
 });
 
@@ -45,7 +47,7 @@ export function emptyData() {
     schemaVersion: SCHEMA_VERSION,
     settings: { defaultUnit: "lbs" },
     customExercises: [],
-    workoutTitles: [],
+    templates: PRESET_TITLES.map((name) => newTemplate(name)),
     activeWorkoutId: w.id,
     workouts: [w],
   };
@@ -57,11 +59,7 @@ export function normalize(data) {
   data.schemaVersion = SCHEMA_VERSION;
   data.settings = { defaultUnit: "lbs", ...(data.settings || {}) };
   data.customExercises = Array.isArray(data.customExercises) ? data.customExercises : [];
-  if (!Array.isArray(data.workoutTitles)) {
-    // First load after this feature shipped: seed the list from existing workout names.
-    data.workoutTitles = [];
-    for (const w of data.workouts) rememberTitle(data, w.name || "");
-  }
+  if (!Array.isArray(data.templates)) migrateToTemplates(data);
   if (!data.workouts.some((w) => w.id === data.activeWorkoutId)) {
     const w = newWorkout();
     data.workouts.push(w);
@@ -96,7 +94,7 @@ const touch = (w) => { w.updatedAt = now(); };
 export function addSingle(data, name) {
   const w = activeWorkout(data);
   const unit = data.settings.defaultUnit;
-  w.blocks.push({ id: uid("b"), type: "single", rounds: null, exercises: [newExercise(name, unit, 1)] });
+  w.blocks.push({ id: uid("b"), type: "single", rounds: null, exercises: [newExercise(name, unit)] });
   rememberExercise(data, name);
   touch(w);
 }
@@ -169,12 +167,25 @@ export function updateSet(data, exerciseId, setId, field, value) {
   const { ex } = findExercise(w, exerciseId);
   const set = ex && ex.sets.find((s) => s.id === setId);
   if (!set) return;
+  const changed = [];
   if (field === "done") set.done = !!value;
   else {
     const n = value === "" || value === null ? null : Number(value);
+    const old = set[field];
     set[field] = Number.isFinite(n) ? n : null;
+    // Typing in the first row fills the rows below it, but only rows that are still empty
+    // or still matched the first row, and aren't checked off. Rows you changed are left alone.
+    if (ex.sets[0] === set) {
+      for (const other of ex.sets.slice(1)) {
+        if (!other.done && (other[field] == null || other[field] === old)) {
+          other[field] = set[field];
+          changed.push(other.id);
+        }
+      }
+    }
   }
   touch(w);
+  return changed; // ids of other sets that were auto-filled
 }
 
 export function toggleDone(data, exerciseId, setId) {
@@ -219,7 +230,6 @@ export function updateWorkoutField(data, field, value) {
 
 export function finishWorkout(data) {
   const w = activeWorkout(data);
-  rememberTitle(data, w.name || "");
   w.finishedAt = now();
   touch(w);
   const next = newWorkout();
@@ -255,45 +265,18 @@ export function workoutSummary(w) {
   return { exercises, sets, done };
 }
 
-// ---------- workout titles (pick list) ----------
+// ---------- saved workouts ("workout buttons" / templates) ----------
 export const PRESET_TITLES = ["Push day", "Pull day", "Leg day", "Upper body", "Lower body", "Full body"];
 
-const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+const same = (a, b) => (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
 
-export function rememberTitle(data, name) {
-  const clean = name.trim();
-  if (!clean) return;
-  data.workoutTitles = data.workoutTitles.filter((t) => !same(t, clean));
-  data.workoutTitles.unshift(clean); // most recently used first
+function newTemplate(name, blocks = []) {
+  return { id: uid("t"), name: name.trim(), blocks: cloneBlocks(blocks), updatedAt: now() };
 }
 
-export function forgetTitle(data, name) {
-  data.workoutTitles = data.workoutTitles.filter((t) => !same(t, name));
-}
-
-// Saved titles first (newest first), then any presets not already saved.
-export function titleOptions(data) {
-  const saved = data.workoutTitles.map((name) => ({ name, saved: true }));
-  const presets = PRESET_TITLES
-    .filter((p) => !data.workoutTitles.some((t) => same(t, p)))
-    .map((name) => ({ name, saved: false }));
-  return [...saved, ...presets];
-}
-
-// Most recent other workout with this title that has exercises in it.
-export function lastWorkoutWithTitle(data, name) {
-  if (!name || !name.trim()) return null;
-  return data.workouts
-    .filter((w) => w.id !== data.activeWorkoutId && w.blocks.length && same(w.name || "", name))
-    .sort((a, b) => (b.date + b.startedAt).localeCompare(a.date + a.startedAt))[0] || null;
-}
-
-// Copy another workout's exercises into the active one: same weights/reps/notes, nothing checked off.
-export function repeatWorkout(data, sourceId) {
-  const src = data.workouts.find((w) => w.id === sourceId);
-  const w = activeWorkout(data);
-  if (!src || src === w) return;
-  w.blocks = src.blocks.map((b) => ({
+// Deep copy with fresh ids and nothing checked off; weights, reps and notes are kept.
+export function cloneBlocks(blocks) {
+  return blocks.map((b) => ({
     ...b,
     id: uid("b"),
     exercises: b.exercises.map((e) => ({
@@ -302,5 +285,93 @@ export function repeatWorkout(data, sourceId) {
       sets: e.sets.map((st) => ({ ...st, id: uid("s"), done: false })),
     })),
   }));
+}
+
+// v1 → v2: v1.1 kept a plain list of titles. Turn each into a saved workout, filled with the
+// exercises of the latest workout that used that title, then add any presets that are missing.
+function migrateToTemplates(data) {
+  const titles = Array.isArray(data.workoutTitles) ? data.workoutTitles : [];
+  const names = titles.length ? titles : [...new Set(data.workouts.map((w) => (w.name || "").trim()).filter(Boolean))];
+  data.templates = names.map((name) => {
+    const last = data.workouts
+      .filter((w) => same(w.name, name) && w.blocks.length)
+      .sort((a, b) => (b.date + b.startedAt).localeCompare(a.date + a.startedAt))[0];
+    return newTemplate(name, last ? last.blocks : []);
+  });
+  for (const p of PRESET_TITLES) {
+    if (!data.templates.some((t) => same(t.name, p))) data.templates.push(newTemplate(p));
+  }
+  delete data.workoutTitles;
+}
+
+export const findTemplate = (data, id) => data.templates.find((t) => t.id === id) || null;
+
+// Tap a workout button: today's workout takes its name, and its exercises if it has any.
+export function startFromTemplate(data, templateId) {
+  const t = findTemplate(data, templateId);
+  const w = activeWorkout(data);
+  if (!t) return;
+  w.name = t.name;
+  w.templateId = t.id;
+  if (t.blocks.length) w.blocks = cloneBlocks(t.blocks);
   touch(w);
+}
+
+// "+ New workout": give it a name and start with an empty page to build it.
+export function startNewTemplate(data, name) {
+  const w = activeWorkout(data);
+  w.name = name.trim();
+  w.templateId = null;
+  w.blocks = [];
+  touch(w);
+}
+
+// Save today's workout as a button: updates the linked button, or one with the same name,
+// otherwise adds a new button at the front of the list.
+export function saveAsTemplate(data) {
+  const w = activeWorkout(data);
+  const name = (w.name || "").trim();
+  if (!name) return null;
+  let t = findTemplate(data, w.templateId) || data.templates.find((x) => same(x.name, name));
+  if (t) {
+    t.name = name;
+    t.blocks = cloneBlocks(w.blocks);
+    t.updatedAt = now();
+  } else {
+    t = newTemplate(name, w.blocks);
+    data.templates.unshift(t);
+  }
+  w.templateId = t.id;
+  touch(w);
+  return t;
+}
+
+export function renameTemplate(data, templateId, name) {
+  const t = findTemplate(data, templateId);
+  const clean = name.replace(/\s+/g, " ").trim();
+  if (!t || !clean) return;
+  t.name = clean;
+  t.updatedAt = now();
+  const w = activeWorkout(data);
+  if (w.templateId === t.id) w.name = clean;
+}
+
+export function deleteTemplate(data, templateId) {
+  data.templates = data.templates.filter((t) => t.id !== templateId);
+  for (const w of data.workouts) if (w.templateId === templateId) w.templateId = null;
+}
+
+// Comparable shape of a workout's exercises (ignores ids and check marks).
+const shape = (blocks) => JSON.stringify(blocks.map((b) => [b.type, b.rounds,
+  b.exercises.map((e) => [e.name, e.unit, e.notes, e.sets.map((s) => [s.weight, s.reps])])]));
+
+// What the Save button should offer for today's workout, if anything.
+export function saveState(data) {
+  const w = activeWorkout(data);
+  const name = (w.name || "").trim();
+  if (!name) return { show: false };
+  const t = findTemplate(data, w.templateId) || data.templates.find((x) => same(x.name, name));
+  if (!t) return { show: w.blocks.length > 0, isNew: true, name };
+  const dirty = !same(t.name, name) || t.name !== name || shape(t.blocks) !== shape(w.blocks);
+  return { show: dirty && w.blocks.length > 0, isNew: false, name, templateName: t.name };
 }
