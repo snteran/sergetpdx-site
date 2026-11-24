@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Workout Log · SergeT PDX</title>
+  <meta name="description" content="Log workouts: exercises, supersets, sets, reps, weight and notes.">
+  <meta name="theme-color" content="#1f2937">
+  <link rel="icon" href="img/logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/site.css">
+  <link rel="stylesheet" href="css/workout.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../" aria-label="Back to sergetpdx.com">
+      <img src="img/logo.svg" alt="" width="36" height="36">
+      <span>Workout Log</span>
+    </a>
+    <div class="unit-switch" role="group" aria-label="Default weight unit">
+      <button type="button" data-action="default-unit" data-unit="lbs">lbs</button>
+      <button type="button" data-action="default-unit" data-unit="kg">kg</button>
+    </div>
+  </header>
+
+  <main id="app" class="wrap">
+    <section class="session">
+      <input id="workout-name" class="title-input" data-field="workout-name" placeholder="Workout" aria-label="Workout name" autocomplete="off">
+      <div class="session-meta">
+        <input id="workout-date" type="date" data-field="workout-date" aria-label="Workout date">
+        <span id="progress" class="progress"></span>
+      </div>
+      <textarea id="workout-notes" class="notes" data-field="workout-notes" rows="1" placeholder="Session notes (how you felt, energy, rest times)" aria-label="Session notes"></textarea>
+    </section>
+
+    <section id="blocks" aria-label="Exercises"></section>
+
+    <section class="add-bar" aria-label="Add to workout">
+      <input id="new-exercise" list="exercise-list" placeholder="Add an exercise: type or pick" aria-label="Exercise name" autocomplete="off">
+      <div class="add-actions">
+        <button type="button" class="btn btn-primary" data-action="add-single">+ Exercise</button>
+        <button type="button" class="btn btn-pink" data-action="add-superset">+ Superset</button>
+      </div>
+      <p id="add-error" class="field-error" role="alert"></p>
+    </section>
+
+    <button type="button" class="btn btn-finish" data-action="finish">Finish workout &amp; start new</button>
+
+    <section class="history">
+      <h2>Past workouts</h2>
+      <ul id="history-list"></ul>
+    </section>
+  </main>
+
+  <datalist id="exercise-list"></datalist>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+    <span id="toast-msg"></span>
+    <button type="button" data-action="undo">Undo</button>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

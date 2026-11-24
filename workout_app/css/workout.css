@@ -1,0 +1,172 @@
+/* Workout Log styles. Colors and font come from ../assets/css/site.css */
+
+body { padding-bottom: env(safe-area-inset-bottom); }
+
+.wrap { max-width: 720px; margin: 0 auto; padding: 8px 16px 48px; }
+
+button { font: inherit; color: inherit; cursor: pointer; }
+input, textarea { font: inherit; color: var(--ink); }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 600; font-size: 1.1rem; }
+.brand img { border-radius: 9px; }
+
+.unit-switch { display: flex; background: var(--surface); border-radius: 10px; padding: 3px; }
+.unit-switch button {
+  border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; color: var(--ink-soft); min-width: 44px;
+}
+.unit-switch button[aria-pressed="true"] { background: var(--bg); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+/* ---------- session ---------- */
+.session { padding: 16px 0 8px; }
+.title-input {
+  width: 100%; border: 0; background: transparent; padding: 4px 0;
+  font-size: 2rem; font-weight: 600; outline: none;
+}
+.title-input::placeholder { color: var(--ink); }
+.title-input:focus { box-shadow: inset 0 -2px 0 var(--mint); }
+.session-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 12px; }
+.session-meta input[type="date"] {
+  border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 10px; color: var(--ink-soft);
+}
+.progress { color: var(--mint-dark); font-weight: 500; font-size: .9rem; }
+
+.notes {
+  width: 100%; resize: none; overflow: hidden; border: 1px solid transparent;
+  background: var(--surface); border-radius: var(--radius); padding: 12px 16px;
+  font-size: 1rem; line-height: 1.4; min-height: 48px;
+}
+.notes::placeholder { color: var(--ink-faint); }
+.notes:focus, .num-input:focus, .add-bar input:focus, .ss-add input:focus { outline: none; border-color: var(--mint); }
+
+/* ---------- blocks ---------- */
+#blocks { display: flex; flex-direction: column; gap: 20px; margin-top: 20px; }
+
+.exercise { display: flex; flex-direction: column; gap: 14px; }
+.single .exercise { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); }
+
+.ex-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ex-title h3 { margin: 0; font-size: 1.25rem; font-weight: 500; }
+.ex-title p { margin: 2px 0 0; color: var(--ink-faint); font-size: .95rem; }
+
+.superset { position: relative; }
+.ss-head { display: flex; align-items: center; gap: 8px; }
+.ss-tag {
+  background: var(--pink-soft); color: var(--ink); font-size: 1.05rem; font-weight: 500;
+  padding: 6px 14px; border-radius: 12px 12px 12px 0;
+}
+.stepper { display: flex; gap: 4px; margin-left: auto; }
+.stepper button {
+  width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 1.2rem; line-height: 1;
+}
+.ss-body {
+  border-left: 4px solid var(--pink-soft); margin-left: 0; padding: 16px 0 4px 16px;
+  display: flex; flex-direction: column; gap: 24px;
+}
+.ss-body .exercise + .exercise { padding-top: 20px; border-top: 1px dashed var(--line); }
+
+/* ---------- set rows ---------- */
+.sets { display: flex; flex-direction: column; gap: 10px; }
+.set-row {
+  display: grid; align-items: center; gap: 8px;
+  grid-template-columns: 40px minmax(0, 1fr) 40px minmax(0, 1fr) 40px 48px 28px;
+}
+.set-num {
+  display: grid; place-items: center; height: 44px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 1.05rem;
+}
+.num-input {
+  width: 100%; height: 52px; text-align: center; font-size: 1.3rem; border: 1px solid transparent;
+  background: var(--surface); border-radius: var(--radius); -moz-appearance: textfield;
+}
+.num-input::-webkit-outer-spin-button, .num-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.num-input::placeholder { color: var(--ink-faint); }
+.unit-label, .unit-btn { color: var(--ink-faint); font-size: .95rem; text-align: center; }
+.unit-btn {
+  border: 0; background: transparent; padding: 6px 0; border-radius: 6px; text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.unit-btn:hover { color: var(--ink); }
+
+.check {
+  width: 48px; height: 48px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg);
+  display: grid; place-items: center; transition: background .15s, border-color .15s;
+}
+.check svg { width: 26px; height: 26px; fill: none; stroke: var(--line); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.check[aria-pressed="true"] { background: var(--mint); border-color: var(--mint); }
+.check[aria-pressed="true"] svg { stroke: #fff; }
+.set-row.is-done .num-input { color: var(--ink-soft); }
+
+.icon-btn {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: none;
+  border: 0; background: transparent; border-radius: 10px; color: var(--ink-faint); font-size: 1.4rem;
+}
+.icon-btn:hover { background: var(--surface); color: var(--danger); }
+.icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.small { width: 28px; height: 28px; font-size: 1.2rem; }
+.icon-spacer { width: 28px; }
+
+/* ---------- buttons & add bars ---------- */
+.btn {
+  border: 0; border-radius: var(--radius); padding: 12px 16px; font-weight: 500; min-height: 48px;
+}
+.btn-primary { background: var(--mint); color: #0d3b30; }
+.btn-pink { background: var(--pink-soft); color: var(--ink); }
+.btn-ghost { background: transparent; border: 1.5px dashed var(--line); color: var(--ink-soft); }
+.btn-ghost:hover { border-color: var(--mint); color: var(--ink); }
+.btn-finish { width: 100%; margin-top: 16px; background: var(--ink); color: var(--bg); }
+
+.add-bar {
+  margin-top: 28px; padding: 16px; border-radius: var(--radius); background: var(--surface);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.add-bar input, .ss-add input {
+  width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); font-size: 1rem;
+}
+.add-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field-error { margin: 0; color: var(--danger); font-size: .85rem; min-height: 0; }
+.field-error:empty { display: none; }
+.ss-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+
+.empty { color: var(--ink-faint); margin: 0; }
+.empty.big { text-align: center; padding: 28px 0; border: 1.5px dashed var(--line); border-radius: var(--radius); }
+
+/* ---------- history ---------- */
+.history { margin-top: 36px; }
+.history h2 { font-size: 1.1rem; font-weight: 500; margin: 0 0 10px; }
+.history ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.history li { display: flex; align-items: center; gap: 8px; }
+.hist-open {
+  flex: 1; text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius); padding: 10px 14px;
+}
+.hist-open strong { display: block; font-weight: 500; }
+.hist-open small { color: var(--ink-faint); }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: var(--radius);
+  background: var(--ink); color: var(--bg); box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 10; max-width: calc(100% - 32px);
+}
+.toast[hidden] { display: none; }
+.toast button { border: 0; background: transparent; color: var(--mint); font-weight: 600; padding: 4px; }
+
+/* ---------- small phones ---------- */
+@media (max-width: 400px) {
+  .set-row { grid-template-columns: 34px minmax(0, 1fr) 32px minmax(0, 1fr) 34px 44px 24px; gap: 6px; }
+  .num-input { height: 48px; font-size: 1.15rem; }
+  .check { width: 44px; height: 44px; }
+  .ss-body { padding-left: 12px; }
+  .title-input { font-size: 1.7rem; }
+}
+
+/* ---------- desktop ---------- */
+@media (min-width: 760px) {
+  .wrap { padding-top: 16px; }
+  .add-bar { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .add-bar input { flex: 1; }
+  .add-actions { display: flex; }
+}

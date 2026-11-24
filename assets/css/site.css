@@ -1,0 +1,40 @@
+/* Shared design tokens for sergetpdx.com — every page and app imports this. */
+:root {
+  --ink: #1f2937;
+  --ink-soft: #6b7280;
+  --ink-faint: #9ca3af;
+  --bg: #ffffff;
+  --surface: #f4f5f5;
+  --line: #d9dcdf;
+  --mint: #3fd4ae;
+  --mint-dark: #1a9f7f;
+  --pink: #f28b95;
+  --pink-soft: #ffdfe2;
+  --danger: #d9485a;
+  --radius: 12px;
+  --font: "Lexend", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #eef0f2;
+    --ink-soft: #a7adb5;
+    --ink-faint: #7b828b;
+    --bg: #14181d;
+    --surface: #1f252c;
+    --line: #353c45;
+    --pink-soft: #4a2a30;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--mint-dark); }
