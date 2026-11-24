@@ -45,6 +45,7 @@ export function emptyData() {
     schemaVersion: SCHEMA_VERSION,
     settings: { defaultUnit: "lbs" },
     customExercises: [],
+    workoutTitles: [],
     activeWorkoutId: w.id,
     workouts: [w],
   };
@@ -56,6 +57,11 @@ export function normalize(data) {
   data.schemaVersion = SCHEMA_VERSION;
   data.settings = { defaultUnit: "lbs", ...(data.settings || {}) };
   data.customExercises = Array.isArray(data.customExercises) ? data.customExercises : [];
+  if (!Array.isArray(data.workoutTitles)) {
+    // First load after this feature shipped: seed the list from existing workout names.
+    data.workoutTitles = [];
+    for (const w of data.workouts) rememberTitle(data, w.name || "");
+  }
   if (!data.workouts.some((w) => w.id === data.activeWorkoutId)) {
     const w = newWorkout();
     data.workouts.push(w);
@@ -213,6 +219,7 @@ export function updateWorkoutField(data, field, value) {
 
 export function finishWorkout(data) {
   const w = activeWorkout(data);
+  rememberTitle(data, w.name || "");
   w.finishedAt = now();
   touch(w);
   const next = newWorkout();
@@ -246,4 +253,54 @@ export function workoutSummary(w) {
   const done = w.blocks.reduce(
     (n, b) => n + b.exercises.reduce((m, e) => m + e.sets.filter((s) => s.done).length, 0), 0);
   return { exercises, sets, done };
+}
+
+// ---------- workout titles (pick list) ----------
+export const PRESET_TITLES = ["Push day", "Pull day", "Leg day", "Upper body", "Lower body", "Full body"];
+
+const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+export function rememberTitle(data, name) {
+  const clean = name.trim();
+  if (!clean) return;
+  data.workoutTitles = data.workoutTitles.filter((t) => !same(t, clean));
+  data.workoutTitles.unshift(clean); // most recently used first
+}
+
+export function forgetTitle(data, name) {
+  data.workoutTitles = data.workoutTitles.filter((t) => !same(t, name));
+}
+
+// Saved titles first (newest first), then any presets not already saved.
+export function titleOptions(data) {
+  const saved = data.workoutTitles.map((name) => ({ name, saved: true }));
+  const presets = PRESET_TITLES
+    .filter((p) => !data.workoutTitles.some((t) => same(t, p)))
+    .map((name) => ({ name, saved: false }));
+  return [...saved, ...presets];
+}
+
+// Most recent other workout with this title that has exercises in it.
+export function lastWorkoutWithTitle(data, name) {
+  if (!name || !name.trim()) return null;
+  return data.workouts
+    .filter((w) => w.id !== data.activeWorkoutId && w.blocks.length && same(w.name || "", name))
+    .sort((a, b) => (b.date + b.startedAt).localeCompare(a.date + a.startedAt))[0] || null;
+}
+
+// Copy another workout's exercises into the active one: same weights/reps/notes, nothing checked off.
+export function repeatWorkout(data, sourceId) {
+  const src = data.workouts.find((w) => w.id === sourceId);
+  const w = activeWorkout(data);
+  if (!src || src === w) return;
+  w.blocks = src.blocks.map((b) => ({
+    ...b,
+    id: uid("b"),
+    exercises: b.exercises.map((e) => ({
+      ...e,
+      id: uid("e"),
+      sets: e.sets.map((st) => ({ ...st, id: uid("s"), done: false })),
+    })),
+  }));
+  touch(w);
 }

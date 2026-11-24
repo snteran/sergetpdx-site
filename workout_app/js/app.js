@@ -7,8 +7,10 @@ let data = S.normalize(loadData());
 let undoSnapshot = null;
 let toastTimer = null;
 let saveTimer = null;
+let managingTitles = false;
 
 const $ = (sel) => document.querySelector(sel);
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -128,8 +130,9 @@ function render() {
   const names = [...new Set([...EXERCISES, ...data.customExercises])].sort((a, b) => a.localeCompare(b));
   $("#exercise-list").innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
 
+  renderTitlePicker();
   renderHistory();
-  document.querySelectorAll("textarea.notes").forEach(autoGrow);
+  document.querySelectorAll("textarea.notes, #workout-name").forEach(autoGrow);
 }
 
 function setValue(sel, v) {
@@ -142,6 +145,30 @@ function updateProgress() {
   $("#progress").textContent = sets ? `${done}/${sets} sets done` : "";
 }
 
+function renderTitlePicker() {
+  const w = S.activeWorkout(data);
+  const current = (w.name || "").trim().toLowerCase();
+  $("[data-action='manage-titles']").setAttribute("aria-pressed", String(managingTitles));
+  $("[data-action='manage-titles']").textContent = managingTitles ? "Done" : "Edit list";
+  $("#title-chips").innerHTML = S.titleOptions(data).map(({ name, saved }) => {
+    const on = name.trim().toLowerCase() === current;
+    const remove = managingTitles && saved
+      ? `<button type="button" class="chip-x" data-action="forget-title" data-title="${esc(name)}" aria-label="Remove ${esc(name)} from list">&times;</button>`
+      : "";
+    return `<span class="chip ${on ? "is-on" : ""}">
+      <button type="button" class="chip-btn" data-action="pick-title" data-title="${esc(name)}" aria-pressed="${on}">${esc(name)}</button>${remove}
+    </span>`;
+  }).join("");
+
+  const last = w.blocks.length ? null : S.lastWorkoutWithTitle(data, w.name);
+  $("#repeat-slot").innerHTML = last
+    ? `<button type="button" class="btn btn-repeat" data-action="repeat-workout" data-workout="${last.id}">
+        Repeat last ${esc(last.name)}
+        <small>${esc(last.date)} · ${plural(S.workoutSummary(last).exercises, "exercise")}, same weights &amp; reps</small>
+      </button>`
+    : "";
+}
+
 function renderHistory() {
   const past = data.workouts
     .filter((w) => w.id !== data.activeWorkoutId)
@@ -152,7 +179,7 @@ function renderHistory() {
         return `<li data-workout="${w.id}">
           <button type="button" class="hist-open" data-action="open-workout">
             <strong>${esc(w.name || "Workout")}</strong>
-            <small>${esc(w.date)} · ${s.exercises} exercises · ${s.done}/${s.sets} sets</small>
+            <small>${esc(w.date)} · ${plural(s.exercises, "exercise")} · ${s.done}/${s.sets} sets</small>
           </button>
           <button type="button" class="icon-btn small" data-action="delete-workout" aria-label="Delete workout from ${esc(w.date)}">&times;</button>
         </li>`;
@@ -219,6 +246,16 @@ document.addEventListener("click", (e) => {
       return commit(() => S.toggleDone(data, exId, row.dataset.set));
     case "toggle-unit":
       return commit(() => S.toggleUnit(data, exId));
+    case "pick-title":
+      if (managingTitles) return;
+      return commit(() => S.updateWorkoutField(data, "name", btn.dataset.title));
+    case "manage-titles":
+      managingTitles = !managingTitles;
+      return renderTitlePicker();
+    case "forget-title":
+      return commit(() => S.forgetTitle(data, btn.dataset.title));
+    case "repeat-workout":
+      return commit(() => S.repeatWorkout(data, btn.dataset.workout));
     case "finish":
       return commit(() => S.finishWorkout(data), "Workout saved to history");
     case "open-workout":
@@ -253,6 +290,7 @@ document.addEventListener("input", (e) => {
     S.updateExerciseField(data, el.dataset.ex, "notes", el.value);
   } else if (field === "workout-name") {
     S.updateWorkoutField(data, "name", el.value);
+    renderTitlePicker();
   } else if (field === "workout-date") {
     S.updateWorkoutField(data, "date", el.value);
   } else if (field === "workout-notes") {
@@ -264,6 +302,11 @@ document.addEventListener("input", (e) => {
 // Enter in an "add" box acts like pressing its button.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
+  if (e.target.id === "workout-name") {
+    e.preventDefault();
+    e.target.blur();
+    return;
+  }
   if (e.target.id === "new-exercise") {
     e.preventDefault();
     document.querySelector("[data-action='add-single']").click();
@@ -271,6 +314,25 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     e.target.closest(".ss-add").querySelector("button").click();
   }
+});
+
+// When the title box loses focus, add what was typed to the pick list.
+document.addEventListener("change", (e) => {
+  if (e.target.id !== "workout-name") return;
+  const clean = e.target.value.replace(/\s+/g, " ").trim();
+  S.updateWorkoutField(data, "name", clean);
+  S.rememberTitle(data, clean);
+  save();
+  // Blur often happens because the user is tapping a chip. Re-drawing right now would swap
+  // that chip out mid-tap, so wait for the click to finish (or 400 ms) before re-drawing.
+  let timer = null;
+  const later = () => {
+    clearTimeout(timer);
+    document.removeEventListener("click", later, true);
+    setTimeout(render, 0);
+  };
+  document.addEventListener("click", later, true);
+  timer = setTimeout(later, 400);
 });
 
 function showFieldError(msg) {
