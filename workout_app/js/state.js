@@ -194,6 +194,18 @@ export function updateSet(data, exerciseId, setId, field, value) {
   return changed; // ids of other sets that were auto-filled
 }
 
+// Is it time to rest after checking off this set? Single exercise: yes.
+// Superset: only once every exercise has its set for that round checked off
+// (A1 + B1 done → rest; A1 alone → keep going to B).
+export function roundComplete(data, exerciseId, setId) {
+  const { block, ex } = findExercise(activeWorkout(data), exerciseId);
+  if (!block || !ex) return false;
+  const i = ex.sets.findIndex((s) => s.id === setId);
+  if (i < 0 || !ex.sets[i].done) return false;
+  if (block.type !== "superset") return true;
+  return block.exercises.every((e) => e.sets[i] && e.sets[i].done);
+}
+
 export function toggleDone(data, exerciseId, setId) {
   const w = activeWorkout(data);
   const { ex } = findExercise(w, exerciseId);

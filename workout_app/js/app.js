@@ -372,8 +372,7 @@ document.addEventListener("click", (e) => {
       return commit(() => S.removeSet(data, exId, row.dataset.set), "Set removed");
     case "toggle-done": {
       commit(() => S.toggleDone(data, exId, row.dataset.set));
-      const set = S.findExercise(S.activeWorkout(data), exId).ex?.sets.find((x) => x.id === row.dataset.set);
-      if (set && set.done) timer.setCompleted();
+      if (S.roundComplete(data, exId, row.dataset.set)) timer.setCompleted();
       return;
     }
     case "open-feedback":

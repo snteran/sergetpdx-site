@@ -191,7 +191,8 @@ export function createTimer({ root, getSettings, saveSettings }) {
         </div>
         <label class="tp-auto">
           <input type="checkbox" data-timer="auto" ${s.autoRest ? "checked" : ""}>
-          Start automatically when I check off a set
+          <span>Start automatically when I check off a set
+            <small>In a superset: after the last exercise of each round</small></span>
         </label>
       </div>` : ""}`;
   }

@@ -293,6 +293,7 @@ input, textarea { font: inherit; color: var(--ink); }
 .tp-reset { display: block; margin: 8px auto 0; }
 .tp-label { margin: 14px 0 8px; color: var(--ink-faint); font-size: .85rem; }
 .tp-auto { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: .9rem; color: var(--ink-soft); line-height: 1.35; }
+.tp-auto small { display: block; color: var(--ink-faint); font-size: .8rem; margin-top: 2px; }
 .tp-auto input { width: 20px; height: 20px; accent-color: var(--mint-dark); flex: none; margin: 0; }
 
 /* ---------- footer + suggestions ---------- */

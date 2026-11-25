@@ -141,3 +141,41 @@ def test_suggestion_error_is_shown(page: Page, base_url):
     page.locator("[data-form='feedback'] [type='submit']").click()
     expect(page.locator("[data-form='feedback'] .field-error")).to_contain_text("Couldn't send")
     expect(page.locator("#fb-msg")).to_have_value("Another idea here")  # nothing lost
+
+
+def test_auto_start_waits_for_end_of_superset_round(app: Page):
+    app.click(".timer-more")
+    app.locator("[data-timer='auto']").check()
+    app.locator(".timer-panel [data-timer='close']").click()
+
+    app.fill("#new-exercise", "Bulgarian split squat")
+    app.click("[data-action='add-superset']")
+    ss = app.locator(".superset")
+    ss.locator(".ss-add input").fill("Romanian deadlift")
+    ss.locator("[data-action='add-to-superset']").click()
+    a, b = ss.locator(".exercise").nth(0), ss.locator(".exercise").nth(1)
+
+    a.locator("[data-action='toggle-done']").nth(0).click()          # A round 1
+    expect(pill(app)).to_have_text("Rest 1:30")                       # not yet: B still to do
+    b.locator("[data-action='toggle-done']").nth(0).click()          # B round 1 → round complete
+    expect(app.locator(".timer-pill.mode-running")).to_have_count(1)
+
+    app.click(".timer-more")
+    app.locator(".timer-panel [data-timer='reset']").click()
+    b.locator("[data-action='toggle-done']").nth(1).click()          # out of order: B round 2 first
+    expect(pill(app)).to_have_text("Rest 1:30")
+    a.locator("[data-action='toggle-done']").nth(1).click()          # A round 2 completes it
+    expect(app.locator(".timer-pill.mode-running")).to_have_count(1)
+
+
+def test_auto_start_single_exercise_every_set(app: Page):
+    app.click(".timer-more")
+    app.locator("[data-timer='auto']").check()
+    app.locator(".timer-panel [data-timer='close']").click()
+    app.fill("#new-exercise", "Trap bar deadlift")
+    app.click("[data-action='add-single']")
+    app.locator("[data-action='toggle-done']").nth(0).click()
+    expect(app.locator(".timer-pill.mode-running")).to_have_count(1)
+    app.locator(".timer-main").click()        # pause
+    app.locator("[data-action='toggle-done']").nth(1).click()
+    expect(app.locator(".timer-pill.mode-running")).to_have_count(1)   # restarts for the next set
