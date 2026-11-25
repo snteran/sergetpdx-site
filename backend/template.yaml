@@ -1,0 +1,171 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Workout Log sync backend: sign-in (Cognito), an HTTP API that only signed-in users can call,
+  a Python Lambda that loads/saves each user's data, and a DynamoDB table to keep it.
+
+Parameters:
+  AuthDomainPrefix:
+    Type: String
+    Default: sergetpdx-workout
+    Description: >
+      First part of the sign-in page address, https://<prefix>.auth.us-west-2.amazoncognito.com.
+      Must be unique across AWS; change it if deploy says it is taken.
+  SiteOrigin:
+    Type: String
+    Default: https://sergetpdx.com
+  LocalOrigin:
+    Type: String
+    Default: http://localhost:8000
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 256
+    Architectures: [arm64]
+
+Resources:
+  # ---------- sign-in ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: workout-app-users
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireUppercase: false
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref AuthDomainPrefix
+      UserPoolId: !Ref UserPool
+
+  WebClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: workout-app-web
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false              # browser app: no secret, uses PKCE instead
+      SupportedIdentityProviders: [COGNITO]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      CallbackURLs:
+        - !Sub "${SiteOrigin}/workout_app/"
+        - !Sub "${LocalOrigin}/workout_app/"
+      LogoutURLs:
+        - !Sub "${SiteOrigin}/workout_app/"
+        - !Sub "${LocalOrigin}/workout_app/"
+      ExplicitAuthFlows: [ALLOW_REFRESH_TOKEN_AUTH, ALLOW_USER_SRP_AUTH]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 90
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  # ---------- data ----------
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain               # deleting the stack never deletes users' workouts
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: workout-app-data
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+
+  # ---------- API ----------
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref SiteOrigin
+          - !Ref LocalOrigin
+          - https://www.sergetpdx.com
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, PUT, OPTIONS]
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+              audience:
+                - !Ref WebClient
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+
+  DataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: workout-app-data
+      CodeUri: src/
+      Handler: handler.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DataTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataTable
+      Events:
+        GetData:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /data
+            Method: GET
+        PutData:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /data
+            Method: PUT
+
+  DataFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${DataFunction}"
+      RetentionInDays: 14
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the API
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"
+  UserPoolId:
+    Value: !Ref UserPool
+  ClientId:
+    Value: !Ref WebClient
+  AuthDomain:
+    Description: Sign-in page host
+    Value: !Sub "${AuthDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+  Region:
+    Value: !Ref AWS::Region

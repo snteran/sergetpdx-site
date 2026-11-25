@@ -22,6 +22,37 @@ input, textarea { font: inherit; color: var(--ink); }
 }
 .unit-switch button[aria-pressed="true"] { background: var(--bg); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
+/* ---------- account / sync ---------- */
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.account { position: static; } /* panel anchors to the sticky header instead */
+.btn-signin {
+  border: 1.5px solid var(--mint); background: var(--bg); color: var(--ink); border-radius: 10px;
+  padding: 7px 12px; font-weight: 500; min-height: 40px;
+}
+.account-btn {
+  position: relative; display: grid; place-items: center; width: 42px; height: 42px;
+  border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg);
+}
+.account-btn svg { width: 24px; height: 24px; fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linejoin: round; }
+.sync-dot {
+  position: absolute; right: 6px; bottom: 6px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--ink-faint); border: 2px solid var(--bg);
+}
+.sync-synced .sync-dot { background: var(--mint); }
+.sync-syncing .sync-dot { background: #f0b429; }
+.sync-error .sync-dot, .sync-offline .sync-dot { background: var(--danger); }
+.account-panel {
+  position: absolute; right: 16px; top: calc(100% + 6px); width: min(320px, calc(100vw - 32px)); z-index: 20;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.15);
+}
+.account-panel p { margin: 0 0 6px; }
+.acct-email { font-weight: 500; overflow-wrap: anywhere; }
+.acct-status { color: var(--mint-dark); font-size: .9rem; }
+.acct-note { color: var(--ink-soft); font-size: .85rem; }
+.acct-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.acct-actions .btn { min-height: 42px; padding: 8px; }
+
 /* ---------- session ---------- */
 .session { padding: 16px 0 8px; }
 .title-input {

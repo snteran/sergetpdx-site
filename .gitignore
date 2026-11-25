@@ -5,3 +5,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 test-results/
+# backend: SAM build output and local settings
+backend/.aws-sam/
+backend/samconfig.local.toml

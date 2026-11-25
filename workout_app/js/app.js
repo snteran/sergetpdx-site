@@ -2,6 +2,8 @@
 import { loadData, saveData } from "./storage.js";
 import { EXERCISES } from "./exercises.js";
 import * as S from "./state.js";
+import * as Auth from "./auth.js";
+import { createSync, forgetSyncState } from "./sync.js";
 
 let data = S.normalize(loadData());
 let undoSnapshot = null;
@@ -9,6 +11,8 @@ let toastTimer = null;
 let saveTimer = null;
 let managingTitles = false;
 let newFormOpen = false;
+let accountOpen = false;
+let syncStatus = { state: "idle", detail: "", at: null };
 
 const $ = (sel) => document.querySelector(sel);
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -16,9 +20,64 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ---------- saving ----------
-function save() { clearTimeout(saveTimer); saveData(data); }
+let signingOut = false; // once sign-out starts, nothing may write this account's data back
+function save() {
+  clearTimeout(saveTimer);
+  if (signingOut) return;
+  saveData(data);
+  sync.schedulePush();
+}
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 300); }
-window.addEventListener("pagehide", save);
+window.addEventListener("pagehide", () => { clearTimeout(saveTimer); if (!signingOut) saveData(data); });
+
+// ---------- cloud sync ----------
+const sync = createSync({
+  getData: () => data,
+  setData: (next) => {
+    data = next;
+    saveData(data);
+    render();
+  },
+  onStatus: (st) => { syncStatus = st; renderAccount(); },
+});
+
+function syncLabel() {
+  const time = syncStatus.at ? syncStatus.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  switch (syncStatus.state) {
+    case "syncing": return "Syncing…";
+    case "synced": return `Synced ${time}`;
+    case "offline": return "Offline: will sync when you're back online";
+    case "error": return `Couldn't sync: ${syncStatus.detail}`;
+    default: return "Signed in";
+  }
+}
+
+function renderAccount() {
+  const box = $("#account");
+  if (!Auth.authConfigured()) { box.innerHTML = ""; return; }
+  if (!Auth.isSignedIn()) {
+    accountOpen = false;
+    box.innerHTML = `<button type="button" class="btn-signin" data-action="sign-in">Sign in</button>`;
+    return;
+  }
+  const email = Auth.userEmail();
+  box.innerHTML = `
+    <button type="button" class="account-btn sync-${syncStatus.state}" data-action="toggle-account"
+      aria-expanded="${accountOpen}" aria-label="Account and sync: ${esc(syncLabel())}" title="${esc(syncLabel())}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10a4 4 0 00.5-7.97A6 6 0 006 9.5 4.25 4.25 0 007 18z"/></svg>
+      <span class="sync-dot"></span>
+    </button>
+    ${accountOpen ? `
+      <div class="account-panel" role="dialog" aria-label="Account">
+        <p class="acct-email">${esc(email || "Signed in")}</p>
+        <p class="acct-status">${esc(syncLabel())}</p>
+        <p class="acct-note">Your workouts and saved buttons sync to every device you sign in on.</p>
+        <div class="acct-actions">
+          <button type="button" class="btn btn-ghost" data-action="sync-now">Sync now</button>
+          <button type="button" class="btn btn-ghost" data-action="sign-out">Sign out</button>
+        </div>
+      </div>` : ""}`;
+}
 document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
 
 // Run a structural change: optionally remember the previous state for Undo, save, re-render.
@@ -201,7 +260,8 @@ function renderSaveBar() {
 
 function renderHistory() {
   const past = data.workouts
-    .filter((w) => w.id !== data.activeWorkoutId)
+    // Skip the empty "next workout" placeholders other devices leave behind.
+    .filter((w) => w.id !== data.activeWorkoutId && (w.blocks.length || (w.name || "").trim() || w.notes))
     .sort((a, b) => (b.date + b.startedAt).localeCompare(a.date + a.startedAt));
   $("#history-list").innerHTML = past.length
     ? past.map((w) => {
@@ -232,6 +292,17 @@ document.addEventListener("click", (e) => {
   const exId = btn.dataset.ex || row?.dataset.ex || btn.closest("[data-ex]")?.dataset.ex;
 
   switch (action) {
+    case "sign-in":
+      Auth.signIn();
+      return;
+    case "toggle-account":
+      accountOpen = !accountOpen;
+      return renderAccount();
+    case "sync-now":
+      sync.pull();
+      return;
+    case "sign-out":
+      return signOutAndClear();
     case "default-unit":
       return commit(() => S.setDefaultUnit(data, btn.dataset.unit));
     case "add-single": {
@@ -317,7 +388,9 @@ document.addEventListener("click", (e) => {
       return commit(() => S.deleteWorkout(data, btn.closest("[data-workout]").dataset.workout), "Workout deleted");
     case "undo":
       if (undoSnapshot) {
-        data = S.normalize(JSON.parse(undoSnapshot));
+        const restored = S.normalize(JSON.parse(undoSnapshot));
+        S.reviveAfterUndo(restored, data);
+        data = restored;
         undoSnapshot = null;
         save();
         render();
@@ -399,8 +472,44 @@ document.addEventListener("change", (e) => {
   }
 });
 
+// Upload anything not yet synced, then remove this account's data from this device,
+// so the next person to sign in on it doesn't see (or merge in) your workouts.
+async function signOutAndClear() {
+  await sync.push();
+  if (syncStatus.state !== "synced") {
+    showToast("Couldn't upload your latest changes. Try again when you're online.", false);
+    return;
+  }
+  signingOut = true;
+  forgetSyncState();
+  try { localStorage.removeItem("workoutApp.v1"); } catch { /* ignore */ }
+  Auth.signOut();
+}
+
+// Close the account panel when tapping elsewhere.
+document.addEventListener("click", (e) => {
+  // (A button that was just re-drawn is no longer in the page; ignore those clicks.)
+  if (accountOpen && e.target.isConnected && !e.target.closest("#account")) {
+    accountOpen = false;
+    renderAccount();
+  }
+});
+
 function showFieldError(msg) {
   $("#add-error").textContent = msg;
 }
 
 render();
+renderAccount();
+
+// Coming back from the sign-in page? Finish signing in, then sync.
+(async () => {
+  if (!Auth.authConfigured()) return;
+  try {
+    if (await Auth.finishSignIn()) showToast(`Signed in as ${Auth.userEmail()}`, false);
+  } catch (err) {
+    syncStatus = { state: "error", detail: err.message, at: new Date() };
+  }
+  renderAccount();
+  sync.pull();
+})();

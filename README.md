@@ -7,7 +7,8 @@ Source for **https://sergetpdx.com**, hosted free on GitHub Pages.
 | `index.html` | Hello / home page |
 | `assets/css/site.css` | Shared colors + font (Lexend) for every page |
 | `workout_app/` | Workout Log app → https://sergetpdx.com/workout_app/ |
-| `tests/` | Python + Playwright browser tests |
+| `tests/` | Python + Playwright browser tests (app + sync) |
+| `backend/` | AWS sign-in + sync backend (SAM, Python Lambda, DynamoDB); see `backend/README.md` |
 | `.github/workflows/tests.yml` | Runs the tests on every push |
 | `CNAME` | Tells GitHub Pages to serve this repo at sergetpdx.com |
 
@@ -36,7 +37,10 @@ pytest -q
 |---|---|
 | `workout_app/js/state.js` | Data model + every add/remove/update action (no DOM code) |
 | `workout_app/js/app.js` | Draws the page and wires up buttons/inputs |
-| `workout_app/js/storage.js` | Save/load (localStorage today, AWS later, same two functions) |
+| `workout_app/js/storage.js` | Save/load on this device (localStorage) |
+| `workout_app/js/auth.js` | Sign-in with Cognito's hosted page (PKCE) |
+| `workout_app/js/sync.js` | Upload/download + merge with the cloud copy |
+| `workout_app/js/config.js` | API + sign-in settings, written by `backend/write_config.py` |
 | `workout_app/js/exercises.js` | Starter exercise list for the picker |
 | `workout_app/css/workout.css` | App styles |
 

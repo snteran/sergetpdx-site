@@ -48,6 +48,7 @@ export function emptyData() {
     settings: { defaultUnit: "lbs" },
     customExercises: [],
     templates: PRESET_TITLES.map((name) => newTemplate(name)),
+    deleted: { workouts: {}, templates: {} },
     activeWorkoutId: w.id,
     workouts: [w],
   };
@@ -60,6 +61,11 @@ export function normalize(data) {
   data.settings = { defaultUnit: "lbs", ...(data.settings || {}) };
   data.customExercises = Array.isArray(data.customExercises) ? data.customExercises : [];
   if (!Array.isArray(data.templates)) migrateToTemplates(data);
+  // Ids of things deleted on any device, so a sync doesn't bring them back.
+  data.deleted = {
+    workouts: { ...(data.deleted && data.deleted.workouts) },
+    templates: { ...(data.deleted && data.deleted.templates) },
+  };
   if (!data.workouts.some((w) => w.id === data.activeWorkoutId)) {
     const w = newWorkout();
     data.workouts.push(w);
@@ -243,6 +249,7 @@ export function openWorkout(data, workoutId) {
 
 export function deleteWorkout(data, workoutId) {
   data.workouts = data.workouts.filter((w) => w.id !== workoutId);
+  data.deleted.workouts[workoutId] = now();
   if (!data.workouts.some((w) => w.id === data.activeWorkoutId)) {
     const w = newWorkout();
     data.workouts.push(w);
@@ -358,6 +365,7 @@ export function renameTemplate(data, templateId, name) {
 
 export function deleteTemplate(data, templateId) {
   data.templates = data.templates.filter((t) => t.id !== templateId);
+  data.deleted.templates[templateId] = now();
   for (const w of data.workouts) if (w.templateId === templateId) w.templateId = null;
 }
 
@@ -374,4 +382,55 @@ export function saveState(data) {
   if (!t) return { show: w.blocks.length > 0, isNew: true, name };
   const dirty = !same(t.name, name) || t.name !== name || shape(t.blocks) !== shape(w.blocks);
   return { show: dirty && w.blocks.length > 0, isNew: false, name, templateName: t.name };
+}
+
+// ---------- sync: combine this device's data with the cloud copy ----------
+// Rules: anything deleted on either side stays deleted; for the same workout or button the
+// most recently changed copy wins; new things from both sides are kept. Settings and the
+// workout currently open stay as they are on this device.
+export function mergeData(localIn, remoteIn) {
+  const local = normalize(JSON.parse(JSON.stringify(localIn)));
+  const remote = normalize(JSON.parse(JSON.stringify(remoteIn)));
+  const deleted = {
+    workouts: { ...remote.deleted.workouts, ...local.deleted.workouts },
+    templates: { ...remote.deleted.templates, ...local.deleted.templates },
+  };
+  const pick = (a, b) => (!a ? b : !b ? a : (b.updatedAt || "") > (a.updatedAt || "") ? b : a);
+  // Deleted unless the item was changed (or restored with Undo) after it was deleted.
+  const isGone = (x, gone) => gone[x.id] && gone[x.id] >= (x.updatedAt || "");
+  const mergeList = (mine, theirs, gone) => {
+    const byId = new Map(mine.map((x) => [x.id, x]));
+    const out = [];
+    for (const t of theirs) if (!byId.has(t.id) && !isGone(t, gone)) out.push(t); // new from the cloud first
+    for (const m of mine) {
+      const best = pick(m, theirs.find((t) => t.id === m.id));
+      if (isGone(best, gone)) continue;
+      delete gone[best.id]; // it's alive again
+      out.push(best);
+    }
+    return out;
+  };
+  local.workouts = mergeList(local.workouts, remote.workouts, deleted.workouts)
+    .sort((a, b) => (a.startedAt || "").localeCompare(b.startedAt || ""));
+  local.templates = mergeList(local.templates, remote.templates, deleted.templates);
+  local.customExercises = [...local.customExercises];
+  for (const n of remote.customExercises) rememberExercise(local, n);
+  local.deleted = deleted;
+  return normalize(local);
+}
+
+// Same content? (used to skip pointless uploads)
+export const sameData = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Undo of a delete: anything that was deleted between `before` and `after` gets a fresh
+// updatedAt and loses its deletion mark, so syncing doesn't delete it again.
+export function reviveAfterUndo(restored, current) {
+  const t = now();
+  for (const kind of ["workouts", "templates"]) {
+    for (const id of Object.keys(current.deleted[kind])) {
+      if (restored.deleted[kind][id]) continue;
+      const item = restored[kind].find((x) => x.id === id);
+      if (item) item.updatedAt = t;
+    }
+  }
 }

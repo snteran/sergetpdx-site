@@ -1,0 +1,16 @@
+# Saved answers for `sam deploy` (so you can just run `sam deploy` from the backend folder).
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "workout-app-backend"
+region = "us-west-2"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+s3_prefix = "workout-app-backend"
+disable_rollback = true
+parameter_overrides = "AuthDomainPrefix=\"sergetpdx-workout\" SiteOrigin=\"https://sergetpdx.com\" LocalOrigin=\"http://localhost:8000\""
+image_repositories = []
+
+[default.global.parameters]
+region = "us-west-2"
