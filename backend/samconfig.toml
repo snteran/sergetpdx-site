@@ -8,7 +8,7 @@ resolve_s3 = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 s3_prefix = "workout-app-backend"
-disable_rollback = true
+disable_rollback = false
 parameter_overrides = "AuthDomainPrefix=\"sergetpdx-workout\" SiteOrigin=\"https://sergetpdx.com\" LocalOrigin=\"http://localhost:8000\""
 image_repositories = []
 

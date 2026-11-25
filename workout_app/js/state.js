@@ -413,6 +413,7 @@ export function mergeData(localIn, remoteIn) {
   local.workouts = mergeList(local.workouts, remote.workouts, deleted.workouts)
     .sort((a, b) => (a.startedAt || "").localeCompare(b.startedAt || ""));
   local.templates = mergeList(local.templates, remote.templates, deleted.templates);
+  dedupeTemplates(local, deleted);
   local.customExercises = [...local.customExercises];
   for (const n of remote.customExercises) rememberExercise(local, n);
   local.deleted = deleted;
@@ -433,4 +434,44 @@ export function reviveAfterUndo(restored, current) {
       if (item) item.updatedAt = t;
     }
   }
+}
+
+// Two devices can each have their own "Push day" button (different ids). Keep one per name:
+// the one with exercises, else the most recently changed (ties broken by id, so every
+// device picks the same one). The other is marked deleted everywhere.
+function dedupeTemplates(data, deleted) {
+  const better = (a, b) => {
+    if (!!a.blocks.length !== !!b.blocks.length) return a.blocks.length ? a : b;
+    if ((a.updatedAt || "") !== (b.updatedAt || "")) return (a.updatedAt || "") > (b.updatedAt || "") ? a : b;
+    return a.id < b.id ? a : b;
+  };
+  const keep = new Map();
+  for (const t of data.templates) {
+    const key = t.name.trim().toLowerCase();
+    keep.set(key, keep.has(key) ? better(keep.get(key), t) : t);
+  }
+  const t0 = now();
+  data.templates = data.templates.filter((t) => {
+    const winner = keep.get(t.name.trim().toLowerCase());
+    if (winner === t) return true;
+    deleted.templates[t.id] = t0 > (t.updatedAt || "") ? t0 : t.updatedAt;
+    for (const w of data.workouts) if (w.templateId === t.id) w.templateId = winner.id;
+    return false;
+  });
+}
+
+// Does this device hold anything the person made (vs. a fresh, untouched app)?
+export function hasUserContent(data) {
+  const presets = PRESET_TITLES.map((p) => p.toLowerCase());
+  return data.workouts.some((w) => w.blocks.length || (w.name || "").trim() || (w.notes || "").trim())
+    || data.templates.some((t) => t.blocks.length || !presets.includes(t.name.trim().toLowerCase()));
+}
+
+// "Use my account only": take the cloud copy, plus a fresh empty workout for this device.
+export function adoptCloud(remote) {
+  const data = normalize(JSON.parse(JSON.stringify(remote)));
+  const w = newWorkout();
+  data.workouts.push(w);
+  data.activeWorkoutId = w.id;
+  return data;
 }

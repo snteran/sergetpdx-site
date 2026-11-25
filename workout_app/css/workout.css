@@ -53,6 +53,15 @@ input, textarea { font: inherit; color: var(--ink); }
 .acct-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .acct-actions .btn { min-height: 42px; padding: 8px; }
 
+.sync-choice {
+  margin: 16px 0 4px; padding: 16px; border-radius: var(--radius);
+  border: 2px solid var(--mint); background: var(--surface);
+}
+.sync-choice h2 { margin: 0 0 6px; font-size: 1.05rem; font-weight: 600; }
+.sync-choice p { margin: 0 0 4px; color: var(--ink-soft); font-size: .95rem; line-height: 1.45; }
+.sync-choice .acct-actions .btn { min-height: 48px; }
+@media (max-width: 400px) { .sync-choice .acct-actions { grid-template-columns: 1fr; } }
+
 /* ---------- session ---------- */
 .session { padding: 16px 0 8px; }
 .title-input {

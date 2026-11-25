@@ -39,12 +39,32 @@ const sync = createSync({
     render();
   },
   onStatus: (st) => { syncStatus = st; renderAccount(); },
+  chooseFirstSync,
 });
+
+// First sign-in on a device that already has its own workouts: ask before combining.
+let firstSyncResolve = null;
+function chooseFirstSync() {
+  return new Promise((resolve) => {
+    firstSyncResolve = resolve;
+    $("#sync-choice").innerHTML = `
+      <section class="sync-choice" role="dialog" aria-labelledby="sync-choice-title">
+        <h2 id="sync-choice-title">This device has workouts that aren't in your account</h2>
+        <p>Add them to your account, or use only what's already in your account? If you choose your account only, this device's copy is replaced.</p>
+        <div class="acct-actions">
+          <button type="button" class="btn btn-primary" data-action="first-sync" data-choice="merge">Add them to my account</button>
+          <button type="button" class="btn btn-ghost" data-action="first-sync" data-choice="cloud">Use my account only</button>
+        </div>
+      </section>`;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
 
 function syncLabel() {
   const time = syncStatus.at ? syncStatus.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
   switch (syncStatus.state) {
     case "syncing": return "Syncing…";
+    case "choosing": return "Waiting for your choice";
     case "synced": return `Synced ${time}`;
     case "offline": return "Offline: will sync when you're back online";
     case "error": return `Couldn't sync: ${syncStatus.detail}`;
@@ -292,6 +312,11 @@ document.addEventListener("click", (e) => {
   const exId = btn.dataset.ex || row?.dataset.ex || btn.closest("[data-ex]")?.dataset.ex;
 
   switch (action) {
+    case "first-sync":
+      $("#sync-choice").innerHTML = "";
+      if (firstSyncResolve) firstSyncResolve(btn.dataset.choice);
+      firstSyncResolve = null;
+      return;
     case "sign-in":
       Auth.signIn();
       return;

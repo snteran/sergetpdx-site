@@ -221,3 +221,77 @@ def test_sign_out_uploads_then_clears_device(page: Page, base_url, cloud):
     assert page.evaluate("localStorage.getItem('workoutApp.v1')") is None or \
         "Last minute change" not in page.evaluate("localStorage.getItem('workoutApp.v1')")
     expect(page.locator("[data-action='sign-in']")).to_be_visible()
+
+
+# ---------- first sign-in on a device + duplicate buttons (v2.1) ----------
+
+def cloud_with(cloud, workouts, templates):
+    cloud.version = 2
+    cloud.data = {"schemaVersion": 2, "settings": {"defaultUnit": "lbs"}, "customExercises": [],
+                  "activeWorkoutId": workouts[-1]["id"], "workouts": workouts, "templates": templates,
+                  "deleted": {"workouts": {}, "templates": {}}}
+
+
+def local_with(workouts):
+    return {"schemaVersion": 2, "settings": {"defaultUnit": "lbs"}, "customExercises": [],
+            "activeWorkoutId": workouts[-1]["id"], "workouts": workouts,
+            "templates": [{"id": "t_local_push", "name": "Push day", "updatedAt": "2026-11-20T00:00:00Z", "blocks": []}],
+            "deleted": {"workouts": {}, "templates": {}}}
+
+
+CLOUD_WORKOUTS = [workout("w_cloud", "Cloud workout", "2026-11-22T10:00:00Z", "2026-11-22T11:00:00Z", BENCH),
+                  workout("w_cloud_next", "", "2026-11-22T11:00:00Z", "2026-11-22T11:00:00Z", finished=None)]
+CLOUD_TEMPLATES = [{"id": "t_cloud_push", "name": "Push day", "updatedAt": "2026-11-21T00:00:00Z", "blocks": BENCH}]
+LOCAL_WORKOUTS = [workout("w_old", "Old test workout", "2026-11-10T10:00:00Z", "2026-11-10T11:00:00Z", BENCH),
+                  workout("w_local_next", "", "2026-11-23T10:00:00Z", "2026-11-23T10:00:00Z", finished=None)]
+
+
+def history_names(page):
+    return [t.strip() for t in page.locator("#history-list strong").all_inner_texts()]
+
+
+def test_same_named_buttons_from_two_devices_become_one(page: Page, base_url, cloud):
+    cloud_with(cloud, CLOUD_WORKOUTS, CLOUD_TEMPLATES)
+    setup(page, cloud)  # fresh device: its own preset "Push day" has a different id
+    open_app(page, base_url)
+    wait_synced(page)
+    expect(page.locator(".chip-btn[data-action='pick-template']", has_text="Push day")).to_have_count(1)
+    page.wait_for_timeout(500)
+    names = [t["name"].lower() for t in cloud.data["templates"]]
+    assert names.count("push day") == 1
+    kept = next(t for t in cloud.data["templates"] if t["name"] == "Push day")
+    assert kept["id"] == "t_cloud_push"  # the one with exercises wins
+
+
+def test_first_sign_in_asks_and_can_use_account_only(page: Page, base_url, cloud):
+    cloud_with(cloud, CLOUD_WORKOUTS, CLOUD_TEMPLATES)
+    setup(page, cloud, local=local_with(LOCAL_WORKOUTS))
+    open_app(page, base_url)
+    card = page.locator(".sync-choice")
+    expect(card).to_be_visible()
+    card.locator("[data-choice='cloud']").click()
+    wait_synced(page)
+    expect(page.locator(".sync-choice")).to_have_count(0)
+    assert history_names(page) == ["Cloud workout"]
+    page.fill("#workout-name", "Today")  # next change uploads without the old local workout
+    page.wait_for_timeout(2500)
+    assert "w_old" not in [w["id"] for w in cloud.data["workouts"]]
+
+
+def test_first_sign_in_can_add_this_devices_workouts(page: Page, base_url, cloud):
+    cloud_with(cloud, CLOUD_WORKOUTS, CLOUD_TEMPLATES)
+    setup(page, cloud, local=local_with(LOCAL_WORKOUTS))
+    open_app(page, base_url)
+    page.locator(".sync-choice [data-choice='merge']").click()
+    wait_synced(page)
+    assert sorted(history_names(page)) == ["Cloud workout", "Old test workout"]
+    assert "w_old" in [w["id"] for w in cloud.data["workouts"]]
+
+
+def test_no_question_once_device_has_synced(page: Page, base_url, cloud):
+    cloud_with(cloud, CLOUD_WORKOUTS, CLOUD_TEMPLATES)
+    setup(page, cloud, local=local_with(LOCAL_WORKOUTS))
+    page.add_init_script("localStorage.setItem('workoutApp.syncMeta', JSON.stringify({version: 1}))")
+    open_app(page, base_url)
+    wait_synced(page)
+    expect(page.locator(".sync-choice")).to_have_count(0)

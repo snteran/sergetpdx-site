@@ -4,7 +4,7 @@
 // The app keeps working offline; the next change or reconnect catches up.
 import { CONFIG } from "./config.js";
 import { getAccessToken, isSignedIn } from "./auth.js";
-import { mergeData, sameData } from "./state.js";
+import { mergeData, sameData, hasUserContent, adoptCloud } from "./state.js";
 
 const META_KEY = "workoutApp.syncMeta"; // { version } = cloud version this device last matched
 
@@ -18,7 +18,9 @@ export function forgetSyncState() {
   try { localStorage.removeItem(META_KEY); } catch { /* ignore */ }
 }
 
-export function createSync({ getData, setData, onStatus }) {
+// chooseFirstSync(): asked once per device, when it has its own workouts and the account
+// already has data. Resolves to "merge" (add this device's data) or "cloud" (use the account's).
+export function createSync({ getData, setData, onStatus, chooseFirstSync }) {
   let timer = null;
   let running = null;   // the sync in progress, if any
   let again = false;    // another change arrived while syncing
@@ -59,6 +61,17 @@ export function createSync({ getData, setData, onStatus }) {
     if (!json.data) { // first time for this account: upload what this device has
       writeMeta({ version: 0 });
       return upload();
+    }
+    const firstTimeHere = readMeta().version === 0;
+    if (firstTimeHere && chooseFirstSync && hasUserContent(getData())) {
+      status("choosing");
+      const choice = await chooseFirstSync();
+      status("syncing");
+      if (choice === "cloud") {
+        setData(adoptCloud(json.data), { fromSync: true });
+        writeMeta({ version: json.version });
+        return;
+      }
     }
     const merged = mergeData(getData(), json.data);
     if (!sameData(merged, getData())) setData(merged, { fromSync: true });
