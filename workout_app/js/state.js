@@ -45,7 +45,7 @@ export function emptyData() {
   const w = newWorkout();
   return {
     schemaVersion: SCHEMA_VERSION,
-    settings: { defaultUnit: "lbs" },
+    settings: { defaultUnit: "lbs", restSeconds: 90, autoRest: false },
     customExercises: [],
     templates: PRESET_TITLES.map((name) => newTemplate(name)),
     deleted: { workouts: {}, templates: {} },
@@ -58,7 +58,7 @@ export function emptyData() {
 export function normalize(data) {
   if (!data || typeof data !== "object" || !Array.isArray(data.workouts)) return emptyData();
   data.schemaVersion = SCHEMA_VERSION;
-  data.settings = { defaultUnit: "lbs", ...(data.settings || {}) };
+  data.settings = { defaultUnit: "lbs", restSeconds: 90, autoRest: false, ...(data.settings || {}) };
   data.customExercises = Array.isArray(data.customExercises) ? data.customExercises : [];
   if (!Array.isArray(data.templates)) migrateToTemplates(data);
   // Ids of things deleted on any device, so a sync doesn't bring them back.

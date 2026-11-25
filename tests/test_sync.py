@@ -80,6 +80,24 @@ def open_app(page: Page, base_url):
     page.goto(f"{base_url}/workout_app/")
 
 
+def eventually(page: Page, condition, timeout_ms=10_000):
+    """Poll until condition() is true (the app uploads ~1.5 s after a change)."""
+    waited = 0
+    while not condition():
+        if waited >= timeout_ms:
+            raise AssertionError("condition not met in time")
+        page.wait_for_timeout(100)
+        waited += 100
+
+
+def exercise_names(cloud):
+    return [e["name"] for w in (cloud.data or {}).get("workouts", []) for b in w["blocks"] for e in b["exercises"]]
+
+
+def template_names(cloud):
+    return [t["name"] for t in (cloud.data or {}).get("templates", [])]
+
+
 def wait_synced(page: Page):
     expect(page.locator(".account-btn.sync-synced")).to_have_count(1, timeout=8000)
 
@@ -124,10 +142,7 @@ def test_first_sign_in_uploads_this_devices_data(page: Page, base_url, cloud):
     open_app(page, base_url)
     page.fill("#new-exercise", "Bench press")
     page.click("[data-action='add-single']")
-    wait_synced(page)
-    page.wait_for_timeout(2500)  # debounce
-    names = [e["name"] for w in cloud.data["workouts"] for b in w["blocks"] for e in b["exercises"]]
-    assert "Bench press" in names
+    eventually(page, lambda: "Bench press" in exercise_names(cloud))
 
 
 def test_phone_workouts_and_buttons_show_up_on_desktop(page: Page, base_url, cloud):
@@ -164,13 +179,9 @@ def test_conflict_is_merged_not_overwritten(page: Page, base_url, cloud):
     # Desktop (still on the old version) makes a change.
     page.fill("#new-exercise", "Deadlift")
     page.click("[data-action='add-single']")
-    page.wait_for_timeout(3000)
+    eventually(page, lambda: "Deadlift" in exercise_names(cloud) and "Phone day" in template_names(cloud))
     wait_synced(page)
     assert any(p["baseVersion"] == v for p in cloud.puts)  # first try was stale → 409
-    names = [t["name"] for t in cloud.data["templates"]]
-    assert "Phone day" in names
-    ex = [e["name"] for w in cloud.data["workouts"] for b in w["blocks"] for e in b["exercises"]]
-    assert "Deadlift" in ex
     expect(page.locator(".chip-btn[data-action='pick-template']", has_text="Phone day")).to_have_count(1)
 
 
@@ -194,12 +205,10 @@ def test_undo_after_synced_delete_brings_it_back(page: Page, base_url, cloud):
     wait_synced(page)
     page.click("[data-action='manage-titles']")
     page.locator(".tpl-edit", has=page.locator("input[value='Leg day']")).locator("[data-action='delete-template']").click()
-    page.wait_for_timeout(2500)  # deletion reaches the cloud
-    assert "Leg day" not in [t["name"] for t in cloud.data["templates"]]
+    eventually(page, lambda: "Leg day" not in template_names(cloud))  # deletion reached the cloud
     page.click("[data-action='undo']")
-    page.wait_for_timeout(2500)
+    eventually(page, lambda: "Leg day" in template_names(cloud))
     wait_synced(page)
-    assert "Leg day" in [t["name"] for t in cloud.data["templates"]]
     page.click("[data-action='toggle-account']")
     page.click("[data-action='sync-now']")
     wait_synced(page)
@@ -256,9 +265,7 @@ def test_same_named_buttons_from_two_devices_become_one(page: Page, base_url, cl
     open_app(page, base_url)
     wait_synced(page)
     expect(page.locator(".chip-btn[data-action='pick-template']", has_text="Push day")).to_have_count(1)
-    page.wait_for_timeout(500)
-    names = [t["name"].lower() for t in cloud.data["templates"]]
-    assert names.count("push day") == 1
+    eventually(page, lambda: [n.lower() for n in template_names(cloud)].count("push day") == 1)
     kept = next(t for t in cloud.data["templates"] if t["name"] == "Push day")
     assert kept["id"] == "t_cloud_push"  # the one with exercises wins
 
@@ -274,7 +281,7 @@ def test_first_sign_in_asks_and_can_use_account_only(page: Page, base_url, cloud
     expect(page.locator(".sync-choice")).to_have_count(0)
     assert history_names(page) == ["Cloud workout"]
     page.fill("#workout-name", "Today")  # next change uploads without the old local workout
-    page.wait_for_timeout(2500)
+    eventually(page, lambda: any(w["name"] == "Today" for w in cloud.data["workouts"]))
     assert "w_old" not in [w["id"] for w in cloud.data["workouts"]]
 
 

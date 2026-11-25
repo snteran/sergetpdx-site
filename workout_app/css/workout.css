@@ -2,7 +2,7 @@
 
 body { padding-bottom: env(safe-area-inset-bottom); }
 
-.wrap { max-width: 720px; margin: 0 auto; padding: 8px 16px 48px; }
+.wrap { max-width: 720px; margin: 0 auto; padding: 8px 16px 120px; } /* room for the timer */
 
 button { font: inherit; color: inherit; cursor: pointer; }
 input, textarea { font: inherit; color: var(--ink); }
@@ -233,7 +233,7 @@ input, textarea { font: inherit; color: var(--ink); }
 
 /* ---------- toast ---------- */
 .toast {
-  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: calc(88px + env(safe-area-inset-bottom)); transform: translateX(-50%);
   display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: var(--radius);
   background: var(--ink); color: var(--bg); box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 10; max-width: calc(100% - 32px);
 }
@@ -256,3 +256,56 @@ input, textarea { font: inherit; color: var(--ink); }
   .add-bar input { flex: 1; }
   .add-actions { display: flex; }
 }
+
+/* ---------- rest timer ---------- */
+.rest-timer {
+  /* bottom-left: keeps the green check buttons (right side) free to tap */
+  position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 15;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+}
+.timer-pill {
+  --p: 0;
+  display: flex; align-items: stretch; border-radius: 999px; overflow: hidden;
+  background: var(--ink); color: var(--bg); box-shadow: 0 6px 20px rgba(0,0,0,.22);
+  /* progress fill grows left → right while resting */
+  background-image: linear-gradient(90deg, rgba(63,212,174,.45) calc(var(--p) * 100%), transparent 0);
+}
+.timer-pill.mode-done { background: var(--mint); color: #0d3b30; animation: timer-pulse 1s ease-in-out 3; }
+.timer-main, .timer-more { border: 0; background: transparent; color: inherit; min-height: 52px; }
+.timer-main { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 18px; font-weight: 500; font-size: 1.05rem; }
+.timer-main small { font-size: .75rem; opacity: .8; }
+.timer-time { font-variant-numeric: tabular-nums; }
+.timer-main svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.timer-more { padding: 0 14px 0 8px; border-left: 1px solid rgba(255,255,255,.18); }
+.timer-more svg { width: 20px; height: 20px; fill: currentColor; }
+.mode-done .timer-more { border-left-color: rgba(13,59,48,.2); }
+@keyframes timer-pulse { 50% { transform: scale(1.06); } }
+
+.timer-panel {
+  order: -1; width: min(340px, calc(100vw - 32px)); padding: 14px 16px 16px;
+  background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0,0,0,.18);
+}
+.tp-head { display: flex; align-items: center; justify-content: space-between; }
+.tp-big { text-align: center; font-size: 3rem; font-weight: 600; font-variant-numeric: tabular-nums; margin: 4px 0 10px; }
+.tp-row { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 8px; }
+.tp-row .btn { padding: 10px 6px; }
+.tp-reset { display: block; margin: 8px auto 0; }
+.tp-label { margin: 14px 0 8px; color: var(--ink-faint); font-size: .85rem; }
+.tp-auto { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: .9rem; color: var(--ink-soft); line-height: 1.35; }
+.tp-auto input { width: 20px; height: 20px; accent-color: var(--mint-dark); flex: none; margin: 0; }
+
+/* ---------- footer + suggestions ---------- */
+.app-footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); }
+.foot-links { margin: 12px 0 0; font-size: .85rem; color: var(--ink-faint); }
+.feedback { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.feedback label { font-weight: 500; }
+.feedback textarea {
+  width: 100%; resize: vertical; min-height: 110px; padding: 12px 14px; font-size: 1rem; line-height: 1.4;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg);
+}
+.feedback textarea:focus { outline: none; border-color: var(--mint); }
+.feedback .hint { margin: 0; color: var(--ink-soft); font-size: .85rem; }
+.fb-actions { display: flex; gap: 8px; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.fb-thanks { margin: 10px 0 0; color: var(--mint-dark); font-weight: 500; }

@@ -4,6 +4,8 @@ import { EXERCISES } from "./exercises.js";
 import * as S from "./state.js";
 import * as Auth from "./auth.js";
 import { createSync, forgetSyncState } from "./sync.js";
+import { createTimer } from "./timer.js";
+import { CONFIG } from "./config.js";
 
 let data = S.normalize(loadData());
 let undoSnapshot = null;
@@ -368,8 +370,16 @@ document.addEventListener("click", (e) => {
       return commit(() => S.addSet(data, exId));
     case "remove-set":
       return commit(() => S.removeSet(data, exId, row.dataset.set), "Set removed");
-    case "toggle-done":
-      return commit(() => S.toggleDone(data, exId, row.dataset.set));
+    case "toggle-done": {
+      commit(() => S.toggleDone(data, exId, row.dataset.set));
+      const set = S.findExercise(S.activeWorkout(data), exId).ex?.sets.find((x) => x.id === row.dataset.set);
+      if (set && set.done) timer.setCompleted();
+      return;
+    }
+    case "open-feedback":
+      return toggleFeedback();
+    case "close-feedback":
+      return toggleFeedback(false);
     case "toggle-unit":
       return commit(() => S.toggleUnit(data, exId));
     case "pick-template": {
@@ -523,6 +533,63 @@ document.addEventListener("click", (e) => {
 function showFieldError(msg) {
   $("#add-error").textContent = msg;
 }
+
+// ---------- rest timer ----------
+const timer = createTimer({
+  root: $("#rest-timer"),
+  getSettings: () => data.settings,
+  saveSettings: (patch) => { Object.assign(data.settings, patch); save(); },
+});
+
+// ---------- suggestions ----------
+const FEEDBACK_ON = Boolean(CONFIG.apiUrl);
+$("[data-action='open-feedback']").hidden = !FEEDBACK_ON;
+
+function toggleFeedback(open) {
+  const btn = $("[data-action='open-feedback']");
+  const show = open ?? btn.getAttribute("aria-expanded") !== "true";
+  btn.setAttribute("aria-expanded", String(show));
+  $("#feedback-slot").innerHTML = show ? `
+    <form class="feedback" data-form="feedback" novalidate>
+      <label for="fb-msg">Have an idea or found a problem?</label>
+      <textarea id="fb-msg" rows="4" maxlength="2000" placeholder="Your suggestion"></textarea>
+      <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <p class="hint">We don't reply to suggestions, but we read every one as time permits. Please don't include personal information.</p>
+      <p class="field-error" role="alert"></p>
+      <div class="fb-actions">
+        <button type="submit" class="btn btn-primary">Send</button>
+        <button type="button" class="btn btn-ghost" data-action="close-feedback">Cancel</button>
+      </div>
+    </form>` : "";
+  if (show) $("#fb-msg").focus();
+}
+
+document.addEventListener("submit", async (e) => {
+  const form = e.target.closest("[data-form='feedback']");
+  if (!form) return;
+  e.preventDefault();
+  const msg = form.querySelector("#fb-msg").value.trim();
+  const err = form.querySelector(".field-error");
+  if (msg.length < 3) { err.textContent = "Please write a little more first."; return; }
+  const send = form.querySelector("[type='submit']");
+  send.disabled = true;
+  send.textContent = "Sending…";
+  err.textContent = "";
+  try {
+    const res = await fetch(`${CONFIG.apiUrl}/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: msg, page: "workout_app", website: form.website.value }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
+    $("#feedback-slot").innerHTML = `<p class="fb-thanks">Thanks! Your suggestion was sent.</p>`;
+    $("[data-action='open-feedback']").setAttribute("aria-expanded", "false");
+  } catch (ex) {
+    err.textContent = navigator.onLine ? `Couldn't send: ${ex.message}` : "You're offline. Try again when you're connected.";
+    send.disabled = false;
+    send.textContent = "Send";
+  }
+});
 
 render();
 renderAccount();

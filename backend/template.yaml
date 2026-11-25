@@ -3,6 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   Workout Log sync backend: sign-in (Cognito), an HTTP API that only signed-in users can call,
   a Python Lambda that loads/saves each user's data, and a DynamoDB table to keep it.
+  Also a public "suggestions" endpoint that stores feedback and can email it to the owner.
 
 Parameters:
   AuthDomainPrefix:
@@ -17,6 +18,15 @@ Parameters:
   LocalOrigin:
     Type: String
     Default: http://localhost:8000
+  FeedbackEmail:
+    Type: String
+    Default: ""
+    Description: >
+      Email address that receives each suggestion. Leave empty to only store them.
+      AWS sends a "confirm subscription" email the first time; click the link in it.
+
+Conditions:
+  HasFeedbackEmail: !Not [!Equals [!Ref FeedbackEmail, ""]]
 
 Globals:
   Function:
@@ -109,7 +119,7 @@ Resources:
           - !Ref LocalOrigin
           - https://www.sergetpdx.com
         AllowHeaders: [authorization, content-type]
-        AllowMethods: [GET, PUT, OPTIONS]
+        AllowMethods: [GET, PUT, POST, OPTIONS]
         MaxAge: 600
       Auth:
         DefaultAuthorizer: CognitoJwt
@@ -123,6 +133,10 @@ Resources:
       DefaultRouteSettings:
         ThrottlingBurstLimit: 20
         ThrottlingRateLimit: 10
+      RouteSettings:
+        "POST /feedback":          # public, so keep it slow: ~1 request/second for everyone
+          ThrottlingBurstLimit: 3
+          ThrottlingRateLimit: 1
 
   DataFunction:
     Type: AWS::Serverless::Function
@@ -150,6 +164,64 @@ Resources:
             Path: /data
             Method: PUT
 
+  # ---------- suggestions / feedback ----------
+  FeedbackTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: workout-app-feedback
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  FeedbackTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasFeedbackEmail
+    Properties:
+      TopicName: workout-app-feedback
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref FeedbackEmail
+
+  FeedbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: workout-app-feedback
+      CodeUri: src/
+      Handler: feedback.handler
+      Environment:
+        Variables:
+          FEEDBACK_TABLE: !Ref FeedbackTable
+          TOPIC_ARN: !If [HasFeedbackEmail, !Ref FeedbackTopic, ""]
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref FeedbackTable
+        - !If
+          - HasFeedbackEmail
+          - SNSPublishMessagePolicy:
+              TopicName: !GetAtt FeedbackTopic.TopicName
+          - !Ref AWS::NoValue
+      Events:
+        PostFeedback:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /feedback
+            Method: POST
+            Auth:
+              Authorizer: NONE         # anyone can send a suggestion, signed in or not
+
+  FeedbackFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${FeedbackFunction}"
+      RetentionInDays: 14
+
   DataFunctionLogs:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -169,3 +241,5 @@ Outputs:
     Value: !Sub "${AuthDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
   Region:
     Value: !Ref AWS::Region
+  FeedbackTable:
+    Value: !Ref FeedbackTable
